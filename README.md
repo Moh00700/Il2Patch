@@ -2,7 +2,7 @@
 
 <img src="docs/images/icon.png" width="96" height="96" alt="Il2Patch icon" />
 
-# Il2Patch
+Il2Patch
 
 **A hex / assembly patcher for `libil2cpp.so`, built for offline Unity games you own.**
 Open the file, find the function you want, patch it, save. All on your phone.
@@ -163,12 +163,6 @@ and a short diagnostic you can share when asking for help.
 ---
 
 ## FAQ
-
-**Why does the package name say `com.example.il2patch`?**
-`com.example` is Android Studio's default placeholder domain — every new project starts with it, and
-it has no functional meaning. It's safe to leave as is. If you'd rather it said something else (e.g.
-`com.yourname.il2patch`), that's a one‑line change, but like any `applicationId` change, Android will
-then treat it as a different app from whatever's currently installed.
 
 **Why do I need to uninstall the old app after rebuilding?**
 A repacked or rebuilt APK is signed with a different key (or a different `applicationId`) than the
