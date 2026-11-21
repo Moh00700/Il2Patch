@@ -311,4 +311,96 @@ object Asm {
         }
         return out
     }
+
+    /**
+     * ARM64 only, beta. A control-flow-aware scan for subtract instructions: unlike
+     * [scanForSubCandidates], which only looks at the straight-line path and gives up at the first
+     * `ret` or branch, this one follows conditional branches (both ways), unconditional branches,
+     * and `bl` calls (up to [maxCallDepth] levels deep), since real compiled functions are full of
+     * exactly that -- a guard check here, a shared "clamp and subtract" helper called from several
+     * places there.
+     *
+     * It works purely in file-offset deltas: branch/call immediates are PC-relative, and adding the
+     * raw byte delta to the current file offset is correct as long as the source and target sit in
+     * the same ELF load segment, which holds for ordinary intra-library control flow. [read] must
+     * return the 4-byte little-endian word at a file offset, or null when that offset is out of
+     * bounds (at which point that path is simply abandoned). A global visited-offset set bounds
+     * both loops (a backward branch is only ever walked once) and the total amount of work
+     * ([maxVisits] instructions overall).
+     *
+     * Each hit is (file offset, description, viaCall): viaCall is true when that candidate was only
+     * reached by following a `bl`, meaning it lives in a different function than [startOff] -- worth
+     * knowing before flipping it, since that function may be called from other places too, including
+     * ones you don't want changed.
+     *
+     * Still not a real disassembler: no register or data-flow tracking, so if a function contains
+     * more than one subtract, this can't tell which one actually touches the resource you care
+     * about, and an indirect call through a register (a virtual/interface method call) can't be
+     * followed at all, only a direct `bl`.
+     */
+    fun scanDeep(
+        read: (Long) -> Int?,
+        startOff: Long,
+        maxVisits: Int = 4096,
+        maxCallDepth: Int = 2
+    ): List<Triple<Long, String, Boolean>> {
+        data class Item(val off: Long, val depth: Int, val viaCall: Boolean)
+        val out = ArrayList<Triple<Long, String, Boolean>>()
+        val visited = HashSet<Long>()
+        val queue = ArrayDeque<Item>()
+        queue.addLast(Item(startOff, 0, false))
+        var visits = 0
+        while (queue.isNotEmpty() && visits < maxVisits) {
+            val first = queue.removeFirst()
+            var off = first.off
+            val viaCall = first.viaCall
+            val depth = first.depth
+            while (visits < maxVisits) {
+                if (!visited.add(off)) break
+                visits++
+                val word = read(off) ?: break
+                if (word == RET64.toInt()) break
+                val top6 = (word ushr 25) and 0x3F
+                val top8 = (word ushr 24) and 0xFF
+                var stop = false
+                when {
+                    top6 == 0b011011 -> { // TBZ/TBNZ
+                        val b5 = (word ushr 31) and 1
+                        val b40 = (word ushr 19) and 0x1F
+                        var imm14 = (word ushr 5) and 0x3FFF
+                        if (imm14 and 0x2000 != 0) imm14 -= 0x4000
+                        queue.addLast(Item(off + imm14 * 4L, depth, viaCall))
+                    }
+                    top6 == 0b011010 -> { // CBZ/CBNZ
+                        var imm19 = (word ushr 5) and 0x7FFFF
+                        if (imm19 and 0x40000 != 0) imm19 -= 0x80000
+                        queue.addLast(Item(off + imm19 * 4L, depth, viaCall))
+                    }
+                    top8 == 0x54 && ((word ushr 4) and 1) == 0 -> { // B.cond
+                        var imm19 = (word ushr 5) and 0x7FFFF
+                        if (imm19 and 0x40000 != 0) imm19 -= 0x80000
+                        queue.addLast(Item(off + imm19 * 4L, depth, viaCall))
+                    }
+                    ((word ushr 26) and 0x3F) == 0b000101 -> { // B (unconditional) -- path ends here
+                        var imm26 = word and 0x3FFFFFF
+                        if (imm26 and 0x2000000 != 0) imm26 -= 0x4000000
+                        queue.addLast(Item(off + imm26 * 4L, depth, viaCall))
+                        stop = true
+                    }
+                    ((word ushr 26) and 0x3F) == 0b100101 -> { // BL (call)
+                        var imm26 = word and 0x3FFFFFF
+                        if (imm26 and 0x2000000 != 0) imm26 -= 0x4000000
+                        if (depth < maxCallDepth) queue.addLast(Item(off + imm26 * 4L, depth + 1, true))
+                    }
+                    else -> {
+                        val flip = flipAddSub(word)
+                        if (flip != null && flip.second.startsWith("sub")) out.add(Triple(off, flip.second, viaCall))
+                    }
+                }
+                if (stop) break
+                off += 4
+            }
+        }
+        return out
+    }
 }
