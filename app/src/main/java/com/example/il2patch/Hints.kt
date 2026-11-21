@@ -15,7 +15,7 @@ class Suggestion(
     val score: Int
 ) {
     /** Text that works in the Patch and Batch tabs. */
-    fun patch(): String = if (kind.isEmpty()) "ret" else "return $kind $value"
+    fun patch(): String = if (kind.isEmpty() || kind == "noop") "ret" else "return $kind $value"
 
     fun batchLine(): String = "%X: %s".format(rva, patch())
 }
@@ -44,7 +44,7 @@ object Hints {
     )
     private val NEGATIVE = setOf(
         "expired", "expire", "trial", "locked", "banned", "limited", "restricted", "blocked", "empty",
-        "insufficient", "lack", "missing", "not"
+        "insufficient", "lack", "missing", "not", "dead", "die", "death", "kill", "killed"
     )
     private val UNLOCKS = setOf(
         "unlock", "unlocked", "unlockable", "lock", "locked"
@@ -59,6 +59,12 @@ object Hints {
     private val ACHIEVEMENTS = setOf(
         "achievement", "achievements", "trophy", "trophies", "star", "stars", "medal", "medals", "badge", "badges"
     )
+    private val GODMODE = setOf(
+        "health", "hp", "godmode", "invincible", "invincibility", "die", "death", "dead", "kill", "killed",
+        "damage", "hurt"
+    )
+    private val HEALTH_WORDS = setOf("health", "hp")
+    private val DAMAGE_DEALT = setOf("damage", "attack", "atk", "power", "multiplier")
 
     private const val GET = 0
     private const val CHECK = 1
@@ -122,7 +128,7 @@ object Hints {
             "set" -> SET
             "add", "earn", "give", "grant", "reward", "increase", "gain", "collect", "receive", "increment" -> ADD
             "spend", "consume", "remove", "use", "deduct", "pay", "decrease", "subtract", "buy", "purchase",
-            "charge", "take", "decrement" -> SPEND
+            "charge", "take", "decrement", "hurt", "die", "kill" -> SPEND
             "show", "display", "play", "watch", "request", "load", "open", "start", "init", "initialize",
             "fetch", "preload" -> SHOW
             else -> OTHER
@@ -175,7 +181,7 @@ object Hints {
                             "Check (enough / can afford).", score + 1
                         )
                     op == SPEND && kind == "void" ->
-                        make("Resources", "", "", "Spend: does nothing, so nothing is deducted.", score)
+                        make("Resources", "noop", "", "Spend: does nothing, so nothing is deducted.", score)
                     op == SPEND && kind == "bool" ->
                         make("Resources", "bool", "true", "Spend: reports success without deducting.", score)
                     op == ADD ->
@@ -193,7 +199,7 @@ object Hints {
                 val rewarded = mt.contains("rewarded") || ct.contains("rewarded")
                 when {
                     op == SHOW && kind == "void" ->
-                        make("Ads", "", "", "Show/load: does nothing. Rewarded ads will not give their reward.", score + 1)
+                        make("Ads", "noop", "", "Show/load: does nothing. Rewarded ads will not give their reward.", score + 1)
                     op == SHOW && kind == "bool" ->
                         make("Ads", "bool", "false", "Show/load reports failure.", score + 1)
                     op == CHECK && kind == "bool" -> {
@@ -291,6 +297,46 @@ object Hints {
                     op == GET && numeric ->
                         make("Achievements", kind, bigValue(r.ret, kind), "Getter: stars / achievement count.", score)
                 }
+            }
+        }
+
+        // ---- god mode (incoming damage / death / health)
+        run {
+            val mHit = mt.any { it in GODMODE }
+            val cHit = ct.any { it in GODMODE }
+            if (mHit || (cHit && (op == SPEND || op == CHECK || op == GET))) {
+                val score = (if (mHit) 4 else 2) + (if (r.paramTypes.isEmpty()) 1 else 0)
+                val healthHit = mt.any { it in HEALTH_WORDS } || ct.any { it in HEALTH_WORDS }
+                when {
+                    op == SPEND && kind == "void" ->
+                        make(
+                            "God Mode", "noop", "",
+                            "Damage / death trigger: does nothing, so it can't hurt or kill you.", score + 1
+                        )
+                    op == CHECK && kind == "bool" ->
+                        make(
+                            "God Mode", "bool", if (negative) "false" else "true",
+                            "Dead / down / game-over check.", score + 1
+                        )
+                    op == GET && numeric && healthHit ->
+                        make("God Mode", kind, bigValue(r.ret, kind), "Getter: health / HP; always full.", score + 2)
+                }
+            }
+        }
+
+        // ---- damage dealt. A flat, very large value stands in for a "multiplier": there is no safe,
+        // generic way to multiply a value the function computes at runtime with a fixed-return patch,
+        // only to replace it outright.
+        run {
+            val mHit = mt.any { it in DAMAGE_DEALT }
+            val cHit = ct.any { it in DAMAGE_DEALT }
+            if ((mHit || cHit) && op == GET && numeric) {
+                val score = (if (mHit) 4 else 2) + (if (r.paramTypes.isEmpty()) 1 else 0)
+                make(
+                    "Damage", kind, bigValue(r.ret, kind),
+                    "Getter: attack / damage stat. This overrides it to a large fixed value, not a true multiplier.",
+                    score + 2
+                )
             }
         }
         return out

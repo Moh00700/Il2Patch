@@ -251,4 +251,36 @@ object Asm {
         }
         throw AsmError("unsupported ARM32 instruction '${t[0]}'")
     }
+
+    /**
+     * ARM64 only. If [word] is an "add/subtract (immediate)" or "add/subtract (shifted register)"
+     * instruction, returns the same instruction with ADD and SUB swapped, plus a short description.
+     * Refuses anything touching the stack pointer (register 31 in these two instruction classes),
+     * since that is almost always frame setup/teardown, not game logic, and the extended-register
+     * form, to stay conservative. Returns null when [word] doesn't match, or isn't recognised.
+     *
+     * This exists for cases like "Spend(int amount)" that do `resource -= amount` in place: there is
+     * no return value to patch, but if you can find the exact subtract instruction (e.g. with pattern
+     * search, or in a disassembler), flipping it to an add makes spending increase the resource
+     * instead of decreasing it.
+     */
+    fun flipAddSub(word: Int): Pair<Int, String>? {
+        val rd = word and 0x1F
+        val rn = (word ushr 5) and 0x1F
+        val opBit = (word ushr 30) and 1
+        val immClass = (word ushr 24) and 0x1F
+        val regClass = (word ushr 24) and 0x1F
+        val now = if (opBit == 0) "add" else "sub"
+        val to = if (opBit == 0) "sub" else "add"
+        if (immClass == 0b10001) {
+            if (rd == 31 || rn == 31) return null // SP in this class: stack frame, refuse
+            return (word xor (1 shl 30)) to "$now (immediate) -> $to"
+        }
+        if (regClass == 0b01011) {
+            if (((word ushr 21) and 1) == 1) return null // extended-register form, stay conservative
+            if (rd == 31 || rn == 31) return null
+            return (word xor (1 shl 30)) to "$now (register) -> $to"
+        }
+        return null
+    }
 }

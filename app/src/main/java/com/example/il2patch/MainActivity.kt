@@ -115,7 +115,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var includeAllSwitch: MaterialSwitch
     private lateinit var catGroup: MaterialButtonToggleGroup
     private val catIds = ArrayList<Int>()
-    private val cats = listOf("Resources", "Ads", "Premium", "Unlocks", "Timers", "Tutorial", "Achievements")
+    private val cats = listOf(
+        "Resources", "Ads", "Premium", "Unlocks", "Timers", "Tutorial", "Achievements", "God Mode", "Damage"
+    )
     private lateinit var filterField: Field
     private lateinit var sugList: LinearLayout
     private lateinit var emptyText: TextView
@@ -615,11 +617,16 @@ class MainActivity : AppCompatActivity() {
         "Timers" -> 0xFF1C9FA6.toInt()
         "Tutorial" -> 0xFF8A6D3B.toInt()
         "Achievements" -> 0xFFC9A227.toInt()
+        "God Mode" -> 0xFFC24A4A.toInt()
+        "Damage" -> 0xFFB3461E.toInt()
         else -> 0xFF5D5C72.toInt()
     }
 
-    private fun effectText(s: Suggestion): String =
-        if (s.kind == "bool") "Always returns " + s.value else "Always returns " + s.value + " (" + s.kind + ")"
+    private fun effectText(s: Suggestion): String = when (s.kind) {
+        "noop" -> "Disabled: does nothing"
+        "bool" -> "Always returns " + s.value
+        else -> "Always returns " + s.value + " (" + s.kind + ")"
+    }
 
     private fun suggestionCard(s: Suggestion): View {
         val col = catColor(s.category)
@@ -781,7 +788,7 @@ class MainActivity : AppCompatActivity() {
         val p = st.patcher ?: return toast("Open a file first")
         val off = toFileOffset(s.rva, true) ?: return toast("Address is not inside the file")
         val data = try {
-            Asm.returnValue(s.kind, s.value, is64())
+            Asm.assemble(s.patch(), is64())
         } catch (e: Exception) {
             return toast("Value: ${e.message}")
         }
@@ -807,11 +814,16 @@ class MainActivity : AppCompatActivity() {
     private fun applySuggestion(s: Suggestion) {
         offsetField.text = "%X".format(s.rva)
         rvaSwitch.isChecked = true
-        val i = types.indexOf(s.kind)
-        if (i >= 0) typeGroup.check(typeIds[i])
-        valueField.text = s.value
-        goPatch(0)
-        toast("Filled in ${s.cls}.${s.method}. Change it if you like, then tap Patch function.")
+        if (s.kind == "noop") {
+            bytesField.text = "ret"
+            goPatch(1)
+        } else {
+            val i = types.indexOf(s.kind)
+            if (i >= 0) typeGroup.check(typeIds[i])
+            valueField.text = s.value
+            goPatch(0)
+        }
+        toast("Filled in ${s.cls}.${s.method}. Change it if you like, then apply.")
     }
 
     private fun sendToBatch() {
@@ -886,7 +898,8 @@ class MainActivity : AppCompatActivity() {
                 title("Write bytes"),
                 hint("Hex like 1F 20 03 D5, or assembly like mov w0, #1; ret"),
                 bytesField.layout,
-                row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() })
+                row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() }),
+                btn("Flip + / − at this address (ARM64)", 2) { doFlipAddSub() }.top(8)
             ),
             card(
                 title("Read bytes"),
@@ -1387,61 +1400,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyOne(p: Patcher, off: Long, data: ByteArray, auto: Boolean): ByteArray {
-        require(off >= 0 && data.isNotEmpty() && off <= p.size() && data.size.toLong() <= p.size() - off) {
-            "patch range is outside the file"
-        }
         val old = p.read(off, data.size)
-        if (old.contentEquals(data)) return old
-        // Keep the working copy and write-through target in sync if either write fails.
-        try {
-            p.write(off, data)
-            if (auto) writeThrough(off, data)
-            p.journal.add(Patcher.Rec(off, old, data.copyOf()))
-        } catch (e: Exception) {
-            try { p.write(off, old) } catch (_: Exception) { }
-            if (auto) try { writeThrough(off, old) } catch (_: Exception) { }
-            throw e
-        }
+        p.write(off, data)
+        p.journal.add(Patcher.Rec(off, old, data))
+        if (auto) writeThrough(off, data)
         return old
-    }
-
-    /** Validate every range and reject overlapping writes before applying a batch. */
-    private fun applyBatchTransaction(p: Patcher, patches: List<Pair<Long, ByteArray>>, auto: Boolean) {
-        val ordered = patches.sortedBy { it.first }
-        for (i in ordered.indices) {
-            val (off, bytes) = ordered[i]
-            require(off >= 0 && bytes.isNotEmpty() && off <= p.size() && bytes.size.toLong() <= p.size() - off) {
-                "patch range outside file at 0x%X".format(off)
-            }
-            if (i > 0) {
-                val prev = ordered[i - 1]
-                require(prev.first + prev.second.size.toLong() <= off) {
-                    "overlapping batch writes at 0x%X".format(off)
-                }
-            }
-        }
-        val originals = patches.map { (off, bytes) -> off to p.read(off, bytes.size) }
-        val journalStart = p.journal.size
-        var applied = 0
-        try {
-            for ((off, bytes) in patches) {
-                val old = originals[applied].second
-                p.write(off, bytes)
-                if (auto) writeThrough(off, bytes)
-                p.journal.add(Patcher.Rec(off, old, bytes.copyOf()))
-                applied++
-            }
-        } catch (e: Exception) {
-            // Roll back every attempted write, including the current one.
-            for (i in applied downTo 0) {
-                if (i >= originals.size) continue
-                val (off, old) = originals[i]
-                try { p.write(off, old) } catch (_: Exception) { }
-                if (auto) try { writeThrough(off, old) } catch (_: Exception) { }
-            }
-            while (p.journal.size > journalStart) p.journal.removeAt(p.journal.lastIndex)
-            throw IllegalStateException("Batch failed; rollback attempted: ${e.message}", e)
-        }
     }
 
     private fun selectedType(): String {
@@ -1467,6 +1430,43 @@ class MainActivity : AppCompatActivity() {
         bg {
             val b = p.read(off, len)
             show(patchResult, "file offset 0x%X\n%s".format(off, Hex.dump(b, off)))
+        }
+    }
+
+    /**
+     * Reads the 4 bytes at the current address and, if they're an ARM64 add/sub instruction (and
+     * not one touching the stack pointer), flips add<->sub and writes it back. Meant for cases like
+     * "Spend(int amount)" that do `resource -= amount` in place: there's no return value to patch,
+     * but if this is the exact subtract instruction, flipping it makes spending increase the resource
+     * instead of decreasing it. Point it at the instruction itself, found via Search or a disassembler
+     * (e.g. Ghidra) -- not at the function's entry point.
+     */
+    private fun doFlipAddSub() {
+        val p = st.patcher ?: return toast("Open a file first")
+        if (!is64()) return toast("Flip +/- only recognises ARM64 instructions")
+        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
+        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
+        if (off < 0 || off + 4 > p.size()) return toast("Address is not inside the file")
+        bg {
+            val old = p.read(off, 4)
+            val word = (old[0].toInt() and 0xFF) or ((old[1].toInt() and 0xFF) shl 8) or
+                ((old[2].toInt() and 0xFF) shl 16) or ((old[3].toInt() and 0xFF) shl 24)
+            val flip = Asm.flipAddSub(word)
+            if (flip == null) {
+                show(patchResult, "0x%X: %s\nNot a recognised add/sub instruction (or it touches the stack pointer).".format(off, Hex.fmt(old)))
+                return@bg
+            }
+            val (newWord, desc) = flip
+            val data = byteArrayOf(
+                (newWord and 0xFF).toByte(), ((newWord shr 8) and 0xFF).toByte(),
+                ((newWord shr 16) and 0xFF).toByte(), ((newWord ushr 24) and 0xFF).toByte()
+            )
+            val auto = autoSwitch.isChecked
+            applyOne(p, off, data, auto)
+            log("0x%X  %s  (was %s, now %s)".format(off, desc, Hex.fmt(old), Hex.fmt(data)))
+            setStatus("${p.journal.size} change(s) this session")
+            show(patchResult, "0x%X: %s\n%s -> %s".format(off, desc, Hex.fmt(old), Hex.fmt(data)))
+            toast("Flipped: $desc")
         }
     }
 
@@ -1541,9 +1541,8 @@ class MainActivity : AppCompatActivity() {
                         base = toFileOffset(v, rva)
                             ?: throw IllegalStateException("address 0x%X is not in a file-backed segment".format(v))
                     }
-                    val off = Math.addExact(base, op.delta)
-                    if (off < 0 || off > p.size() || op.new.size.toLong() > p.size() - off)
-                        throw IllegalStateException("outside the file")
+                    val off = base + op.delta
+                    if (off < 0 || off + op.new.size > p.size()) throw IllegalStateException("outside the file")
                     val cur = p.read(off, op.new.size)
                     if (op.old != null && !cur.contentEquals(op.old)) {
                         throw IllegalStateException("old bytes differ (found ${Hex.fmt(cur)})")
@@ -1567,15 +1566,9 @@ class MainActivity : AppCompatActivity() {
             } else if (dry) {
                 out.add("Dry run OK: ${planned.size} patch(es) would be applied.")
             } else {
-                try {
-                    applyBatchTransaction(p, planned.map { it.second to it.first.new }, auto)
-                    out.add("Applied ${planned.size} patch(es) atomically.")
-                    setStatus("${p.journal.size} change(s) this session")
-                } catch (e: Exception) {
-                    failed++
-                    out.add("ERR: ${e.message}")
-                    out.add("No batch changes should remain; inspect the file if write-through rollback also failed.")
-                }
+                for ((op, off) in planned) applyOne(p, off, op.new, auto)
+                out.add("Applied ${planned.size} patch(es).")
+                setStatus("${p.journal.size} change(s) this session")
             }
             show(batchResult, out.joinToString("\n"))
             log("Batch: ${out.last()}")
@@ -1625,17 +1618,9 @@ class MainActivity : AppCompatActivity() {
             }
             val total = n
             while (n > 0) {
-                val r = p.journal.last()
-                try {
-                    p.write(r.off, r.old)
-                    writeThrough(r.off, r.old)
-                    p.journal.removeAt(p.journal.lastIndex)
-                } catch (e: Exception) {
-                    // Restore the working copy if the original-file undo did not complete.
-                    try { p.write(r.off, r.new) } catch (_: Exception) { }
-                    toast("Undo stopped: ${e.message}")
-                    break
-                }
+                val r = p.journal.removeAt(p.journal.size - 1)
+                p.write(r.off, r.old)
+                writeThrough(r.off, r.old)
                 n--
             }
             log("Undid $total change(s)")
