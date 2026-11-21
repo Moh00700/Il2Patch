@@ -40,19 +40,11 @@ class BytePattern(val bytes: ByteArray, val mask: BooleanArray) {
 class ElfInfo(val is64: Boolean, val machine: Int, val segments: List<Segment>) {
     class Segment(val fileOff: Long, val vaddr: Long, val fileSize: Long)
 
-    fun toFile(v: Long): Long? = segments.firstOrNull {
-        it.fileSize > 0 && v >= it.vaddr && v - it.vaddr < it.fileSize
-    }?.let { segment ->
-        val delta = v - segment.vaddr
-        if (delta > Long.MAX_VALUE - segment.fileOff) null else segment.fileOff + delta
-    }
+    fun toFile(v: Long): Long? =
+        segments.firstOrNull { v >= it.vaddr && v < it.vaddr + it.fileSize }?.let { v - it.vaddr + it.fileOff }
 
-    fun toVaddr(f: Long): Long? = segments.firstOrNull {
-        it.fileSize > 0 && f >= it.fileOff && f - it.fileOff < it.fileSize
-    }?.let { segment ->
-        val delta = f - segment.fileOff
-        if (delta > Long.MAX_VALUE - segment.vaddr) null else segment.vaddr + delta
-    }
+    fun toVaddr(f: Long): Long? =
+        segments.firstOrNull { f >= it.fileOff && f < it.fileOff + it.fileSize }?.let { f - it.fileOff + it.vaddr }
 
     fun archName(): String = when (machine) {
         0xB7 -> "ARM64"
@@ -126,11 +118,9 @@ class Patcher(val file: File) {
     fun size(): Long = file.length()
 
     fun read(off: Long, len: Int): ByteArray {
-        require(off >= 0) { "negative file offset" }
-        require(len >= 0) { "negative read length" }
         RandomAccessFile(file, "r").use { r ->
-            if (off >= r.length() || len == 0) return ByteArray(0)
             val n = minOf(len.toLong(), r.length() - off).toInt()
+            if (n <= 0) return ByteArray(0)
             val b = ByteArray(n)
             r.seek(off)
             r.readFully(b)
@@ -139,11 +129,6 @@ class Patcher(val file: File) {
     }
 
     fun write(off: Long, data: ByteArray) {
-        require(off >= 0) { "negative file offset" }
-        require(data.isNotEmpty()) { "empty patch" }
-        require(off <= file.length() && data.size.toLong() <= file.length() - off) {
-            "write would extend beyond file bounds"
-        }
         RandomAccessFile(file, "rw").use { r ->
             r.seek(off)
             r.write(data)
@@ -152,7 +137,6 @@ class Patcher(val file: File) {
 
     /** Returns up to [max] file offsets where the pattern matches. */
     fun find(p: BytePattern, max: Int): List<Long> {
-        if (max <= 0 || p.bytes.isEmpty() || p.bytes.size != p.mask.size) return emptyList()
         val res = ArrayList<Long>()
         val n = p.bytes.size
         RandomAccessFile(file, "r").use { r ->

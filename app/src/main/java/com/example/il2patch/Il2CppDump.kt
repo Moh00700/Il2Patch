@@ -479,24 +479,6 @@ class Il2CppAnalyzer(private val metaFile: File, private val soFile: File) : Clo
         v39 = version == 39
 
         val fileLen = meta.limit().toLong()
-        // Reject malformed table descriptors early. Only tables used by this parser are checked,
-        // so newer/unknown tables in otherwise supported files remain untouched.
-        val headerEntries = intArrayOf(2, 5, 10, 19, 20, 21)
-        val headerEnd = 8L + (headerEntries.maxOrNull()!! + 1L) * if (v39) 12L else 8L
-        if (headerEnd > fileLen) throw DumpError("Metadata header is truncated")
-        for (idx in headerEntries) {
-            val off = hOff(idx).toLong()
-            val size = hSize(idx).toLong()
-            if (off < 0 || size < 0 || (size > 0 && (off > fileLen || size > fileLen - off))) {
-                throw DumpError("Metadata table [$idx] has an invalid offset or size")
-            }
-            if (v39) {
-                val count = hCount(idx).toLong()
-                if (count < 0 || (size > 0 && count > size)) {
-                    throw DumpError("Metadata table [$idx] has an invalid count")
-                }
-            }
-        }
         if (v39) {
             val sb = StringBuilder("Header tables (offset/size/count):")
             for (i in intArrayOf(0, 2, 5, 10, 14, 19, 20)) sb.append("  [$i]=${hOff(i)}/${hSize(i)}/${hCount(i)}")
@@ -589,16 +571,6 @@ class Il2CppAnalyzer(private val metaFile: File, private val soFile: File) : Clo
         d("Assemblies: $imgCount, type definitions: $totalTypes")
 
         if (totalTypes <= 0) throw DumpError("The assembly table is empty")
-        if (imgCount <= 0 || imgCount > 100_000 || totalTypes > 5_000_000) {
-            throw DumpError("Assembly/type counts are outside safe parser limits")
-        }
-        for (i in 0 until imgCount) {
-            val start = imgTypeStart[i]
-            val count = imgTypeCount[i]
-            if (start < 0 || count < 0 || start > totalTypes || count > totalTypes - start) {
-                throw DumpError("Assembly table contains an invalid type range at entry $i")
-            }
-        }
         if (v39) {
             tdCount = hCount(19)
             tdSize = tdSizeV39
@@ -649,18 +621,6 @@ class Il2CppAnalyzer(private val metaFile: File, private val soFile: File) : Clo
         }
         if (mSize < 28 || mSize > 48 || methodsOff.toLong() + mBytes > fileLen) throw DumpError("Unexpected method definition size $mSize")
         paramsOff = hOff(10)
-        val paramBytes = hSize(10).toLong()
-        if (paramsOff < 0 || paramBytes < 0 || paramsOff.toLong() > fileLen || paramBytes > fileLen - paramsOff) {
-            throw DumpError("Parameter table is outside the metadata file")
-        }
-        if (pSize <= 0 || paramBytes % pSize.toLong() != 0L) throw DumpError("Parameter table record size is inconsistent")
-        for (t in 0 until tdCount) {
-            val start = tdMethodStart[t]
-            val count = tdMethodCount[t]
-            if (start < 0 || count < 0 || start > totalMethodsMeta || count > totalMethodsMeta - start) {
-                throw DumpError("Type definition $t contains an invalid method range")
-            }
-        }
         d("Method definition size: $mSize bytes, methods in metadata: $totalMethodsMeta")
 
         // layout self-check: every method must point back to the type that owns it

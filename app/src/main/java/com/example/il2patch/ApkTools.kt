@@ -60,8 +60,6 @@ object ApkTools {
         }
 
         progress("Repacking APK...")
-        var replacementWritten = false
-        try {
         ZipFile(inApk).use { zf ->
             ZipArchiveOutputStream(unsigned).use { zos ->
                 for (e in Collections.list(zf.entries)) {
@@ -72,8 +70,6 @@ object ApkTools {
                     if (isOldSignature) continue
 
                     if (name == entryName) {
-                        if (replacementWritten) throw IllegalStateException("Duplicate APK entry: $entryName")
-                        replacementWritten = true
                         val ne = ZipArchiveEntry(name)
                         ne.method = ZipEntry.STORED
                         ne.size = newData.length()
@@ -93,7 +89,6 @@ object ApkTools {
                 }
             }
         }
-        if (!replacementWritten) throw IllegalArgumentException("APK entry not found: $entryName")
 
         progress("Signing APK...")
         val ks = KeyStore.getInstance("PKCS12")
@@ -111,8 +106,6 @@ object ApkTools {
             .setV4SigningEnabled(false)
             .build()
             .sign()
-        } finally {
-            unsigned.delete()
-        }
+        unsigned.delete()
     }
 }
