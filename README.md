@@ -177,22 +177,28 @@ to patch — so it can't be turned into "resource increases" with a one‑tap su
 which instruction inside it is "the" subtraction — so this still isn't a guaranteed one‑tap fix, but
 there's now a way to do it entirely inside the app, with no external disassembler:
 
-1. On a **Resources** suggestion whose effect is *"Disabled: does nothing"* (a `Spend`‑style method),
-   tap **Find + increase instead of disable (beta)**. Or, anywhere on the Patch → Bytes tab, put a
-   function's address in **Offset** and tap **Scan this function for subtract (beta, ARM64)**.
+1. Void (no return value) functions like `Spend(int amount)` aren't shown as suggestion cards — there's
+   no return value for a one‑tap "Apply fix" to set, so they don't fit the suggestion list the way a
+   `bool`/`int`‑returning function does. Find the exact `Spend`‑style method yourself instead (Find's
+   search, by name), note its address, put it in **Offset** on the Patch → Bytes tab, and tap
+   **Deep scan for subtract (beta, follows branches/calls, ARM64)**.
 2. Il2Patch reads the function's own instructions (no Ghidra needed) and lists every `sub` instruction
-   it finds before the function returns, with its address. For a simple `Spend` method there's usually
-   exactly one.
+   it can reach, with its address — following conditional branches both ways, unconditional branches,
+   and `bl` calls (up to a couple of levels deep), since real compiled functions are full of guard
+   checks and shared helpers, not just one straight line. A candidate found only by following a call
+   is marked *"in a called function"*, since that function may be shared by other code too.
 3. Tap a candidate in the list to flip it immediately (a snackbar offers **Undo** right away) — `sub`
    becomes `add`, so spending now increases the resource instead of decreasing it.
 
-This is a heuristic, not a real disassembler: it reads straight through the function and stops at the
-first `ret`, so it won't follow branches, and a more complex function can still list the wrong
-candidate first or miss the real one. It also refuses anything that looks like stack‑pointer math
-(almost always frame setup, not game logic). Check the result, and use **Undo** if it's not what you
-expected. You can still fall back to **Search** (a byte pattern) or a disassembler like Ghidra for
-anything it doesn't find. ARM64 (`arm64-v8a`) only, which is what almost all modern Android devices and
-Unity builds use.
+This is still a heuristic, not a real disassembler: it has no idea which register holds "the resource"
+if a function touches more than one number, so a complex function can list the wrong candidate first
+or several candidates to try; it refuses anything that looks like stack‑pointer math (almost always
+frame setup, not game logic); and it can't follow an **indirect** call (a virtual/interface method call
+through a function pointer), only a direct `bl` — if that's what's happening, or if it still finds
+nothing, you'll need a disassembler like Ghidra to follow the chain by hand and the manual
+**Flip + / −** button to apply it once you've found the instruction. Check the result either way, and
+use **Undo** if it's not what you expected. ARM64 (`arm64-v8a`) only, which is what almost all modern
+Android devices and Unity builds use.
 
 ---
 
