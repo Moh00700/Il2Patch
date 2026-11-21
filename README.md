@@ -12,7 +12,6 @@ Open the file, find the function you want, patch it, save. All on your phone.
 [![Min SDK](https://img.shields.io/badge/minSdk-26%20(Android%208.0)-informational)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-7F52FF?logo=kotlin&logoColor=white)](#requirements)
 [![Metadata](https://img.shields.io/badge/IL2CPP%20metadata-24--31%20%7C%2039-orange)](#metadata-version-support)
-[![Build](https://img.shields.io/github/actions/workflow/status/<you>/Il2Patch/build.yml?branch=main&label=build)](../../actions)
 
 </div>
 
