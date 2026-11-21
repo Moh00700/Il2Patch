@@ -653,7 +653,7 @@ class Il2CppAnalyzer(private val metaFile: File, private val soFile: File) : Clo
         if (paramsOff < 0 || paramBytes < 0 || paramsOff.toLong() > fileLen || paramBytes > fileLen - paramsOff) {
             throw DumpError("Parameter table is outside the metadata file")
         }
-        if (pSize <= 0 || paramBytes % pSize != 0) throw DumpError("Parameter table record size is inconsistent")
+        if (pSize <= 0 || paramBytes % pSize.toLong() != 0L) throw DumpError("Parameter table record size is inconsistent")
         for (t in 0 until tdCount) {
             val start = tdMethodStart[t]
             val count = tdMethodCount[t]
