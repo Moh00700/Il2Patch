@@ -1491,8 +1491,9 @@ class MainActivity : AppCompatActivity() {
                         base = toFileOffset(v, rva)
                             ?: throw IllegalStateException("address 0x%X is not in a file-backed segment".format(v))
                     }
-                    val off = base + op.delta
-                    if (off < 0 || off + op.new.size > p.size()) throw IllegalStateException("outside the file")
+                    val off = Math.addExact(base, op.delta)
+                    if (off < 0 || off > p.size() || op.new.size.toLong() > p.size() - off)
+                        throw IllegalStateException("outside the file")
                     val cur = p.read(off, op.new.size)
                     if (op.old != null && !cur.contentEquals(op.old)) {
                         throw IllegalStateException("old bytes differ (found ${Hex.fmt(cur)})")
