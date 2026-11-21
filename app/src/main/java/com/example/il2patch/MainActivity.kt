@@ -1387,11 +1387,61 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyOne(p: Patcher, off: Long, data: ByteArray, auto: Boolean): ByteArray {
+        require(off >= 0 && data.isNotEmpty() && off <= p.size() && data.size.toLong() <= p.size() - off) {
+            "patch range is outside the file"
+        }
         val old = p.read(off, data.size)
-        p.write(off, data)
-        p.journal.add(Patcher.Rec(off, old, data))
-        if (auto) writeThrough(off, data)
+        if (old.contentEquals(data)) return old
+        // Keep the working copy and write-through target in sync if either write fails.
+        try {
+            p.write(off, data)
+            if (auto) writeThrough(off, data)
+            p.journal.add(Patcher.Rec(off, old, data.copyOf()))
+        } catch (e: Exception) {
+            try { p.write(off, old) } catch (_: Exception) { }
+            if (auto) try { writeThrough(off, old) } catch (_: Exception) { }
+            throw e
+        }
         return old
+    }
+
+    /** Validate every range and reject overlapping writes before applying a batch. */
+    private fun applyBatchTransaction(p: Patcher, patches: List<Pair<Long, ByteArray>>, auto: Boolean) {
+        val ordered = patches.sortedBy { it.first }
+        for (i in ordered.indices) {
+            val (off, bytes) = ordered[i]
+            require(off >= 0 && bytes.isNotEmpty() && off <= p.size() && bytes.size.toLong() <= p.size() - off) {
+                "patch range outside file at 0x%X".format(off)
+            }
+            if (i > 0) {
+                val prev = ordered[i - 1]
+                require(prev.first + prev.second.size.toLong() <= off) {
+                    "overlapping batch writes at 0x%X".format(off)
+                }
+            }
+        }
+        val originals = patches.map { (off, bytes) -> off to p.read(off, bytes.size) }
+        val journalStart = p.journal.size
+        var applied = 0
+        try {
+            for ((off, bytes) in patches) {
+                val old = originals[applied].second
+                p.write(off, bytes)
+                if (auto) writeThrough(off, bytes)
+                p.journal.add(Patcher.Rec(off, old, bytes.copyOf()))
+                applied++
+            }
+        } catch (e: Exception) {
+            // Roll back every attempted write, including the current one.
+            for (i in applied downTo 0) {
+                if (i >= originals.size) continue
+                val (off, old) = originals[i]
+                try { p.write(off, old) } catch (_: Exception) { }
+                if (auto) try { writeThrough(off, old) } catch (_: Exception) { }
+            }
+            while (p.journal.size > journalStart) p.journal.removeAt(p.journal.lastIndex)
+            throw IllegalStateException("Batch failed; rollback attempted: ${e.message}", e)
+        }
     }
 
     private fun selectedType(): String {
@@ -1517,9 +1567,15 @@ class MainActivity : AppCompatActivity() {
             } else if (dry) {
                 out.add("Dry run OK: ${planned.size} patch(es) would be applied.")
             } else {
-                for ((op, off) in planned) applyOne(p, off, op.new, auto)
-                out.add("Applied ${planned.size} patch(es).")
-                setStatus("${p.journal.size} change(s) this session")
+                try {
+                    applyBatchTransaction(p, planned.map { it.second to it.first.new }, auto)
+                    out.add("Applied ${planned.size} patch(es) atomically.")
+                    setStatus("${p.journal.size} change(s) this session")
+                } catch (e: Exception) {
+                    failed++
+                    out.add("ERR: ${e.message}")
+                    out.add("No batch changes should remain; inspect the file if write-through rollback also failed.")
+                }
             }
             show(batchResult, out.joinToString("\n"))
             log("Batch: ${out.last()}")
@@ -1569,9 +1625,17 @@ class MainActivity : AppCompatActivity() {
             }
             val total = n
             while (n > 0) {
-                val r = p.journal.removeAt(p.journal.size - 1)
-                p.write(r.off, r.old)
-                writeThrough(r.off, r.old)
+                val r = p.journal.last()
+                try {
+                    p.write(r.off, r.old)
+                    writeThrough(r.off, r.old)
+                    p.journal.removeAt(p.journal.lastIndex)
+                } catch (e: Exception) {
+                    // Restore the working copy if the original-file undo did not complete.
+                    try { p.write(r.off, r.new) } catch (_: Exception) { }
+                    toast("Undo stopped: ${e.message}")
+                    break
+                }
                 n--
             }
             log("Undid $total change(s)")
