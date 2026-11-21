@@ -657,22 +657,11 @@ class MainActivity : AppCompatActivity() {
         lateinit var ap: MaterialButton
         ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }
         val edit = btn("Edit", 2) { applySuggestion(s) }
-        val children = mutableListOf<View>(
+        return card(
             top, name, effect,
             hint("returns " + s.ret + "   " + s.note).top(2),
             row(ap, edit)
         )
-        if (s.category == "Resources" && s.kind == "noop") {
-            children.add(
-                btn("Find + increase instead of disable (beta)", 2) {
-                    offsetField.text = "%X".format(s.rva)
-                    rvaSwitch.isChecked = true
-                    goPatch(1)
-                    doScanForSub()
-                }.top(6)
-            )
-        }
-        return card(*children.toTypedArray())
     }
 
     private fun renderSuggestions() {
@@ -789,7 +778,12 @@ class MainActivity : AppCompatActivity() {
         }
         val q = filterField.text.trim().lowercase()
         return st.suggestions.filter {
-            (if (cat == null) it.category in sel else it.category == cat) &&
+            // void functions ("noop": disable/do-nothing patches) aren't shown as suggestion cards --
+            // there's no return value for "Apply fix" to set, so they're not a one-tap fix the way
+            // the others are. Find one's exact address yourself (Find's search, or a disassembler)
+            // and use Patch -> Bytes -> "Deep scan for subtract" to look for what to flip.
+            it.kind != "noop" &&
+                (if (cat == null) it.category in sel else it.category == cat) &&
                 (q.isEmpty() || (it.cls + "." + it.method).lowercase().contains(q))
         }
     }
@@ -911,7 +905,7 @@ class MainActivity : AppCompatActivity() {
                 bytesField.layout,
                 row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() }),
                 btn("Flip + / − at this address (ARM64)", 2) { doFlipAddSub() }.top(8),
-                btn("Scan this function for subtract (beta, ARM64)", 2) { doScanForSub() }.top(8)
+                btn("Deep scan for subtract (beta, follows branches/calls, ARM64)", 2) { doScanForSub() }.top(8)
             ),
             card(
                 title("Read bytes"),
@@ -1498,12 +1492,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Beta: scans forward from the current address -- meant to be a function's entry point, such
-     * as a Resources "Spend" suggestion's address -- for a subtract instruction, entirely inside
-     * the app, no external disassembler needed. It's a heuristic over straight-line code (see
-     * [Asm.scanForSubCandidates]): for a simple one-line "resource -= amount" function it usually
-     * finds the right instruction immediately, but for anything more complex it may miss it or list
-     * the wrong one first, so check the result (and use Undo if it's not what you wanted).
+     * Beta: scans from the current address -- meant to be a function's entry point, such as a
+     * Resources "Spend" suggestion's address -- for a subtract instruction, entirely inside the
+     * app, no external disassembler needed. Unlike a plain straight-line read, this follows
+     * conditional branches (both ways), unconditional branches, and `bl` calls (see
+     * [Asm.scanDeep]), since real compiled functions are full of guard checks and shared helpers.
+     * It still can't tell *which* subtract is the right one if a function has several, or follow
+     * an indirect (virtual/interface) call, so check the result -- candidates found only via a
+     * call are marked, since they live in a function that may be shared by other code too.
      */
     private fun doScanForSub() {
         val p = st.patcher ?: return toast("Open a file first")
@@ -1511,47 +1507,42 @@ class MainActivity : AppCompatActivity() {
         val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
         val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
         if (off < 0 || off >= p.size()) return toast("Address is not inside the file")
-        val winLen = minOf(4096L, p.size() - off).toInt()
         bg {
-            val bytes = p.read(off, winLen)
-            val hits = Asm.scanForSubCandidates(bytes, maxWords = winLen / 4)
-            if (hits.isEmpty()) {
-                var retIdx = bytes.size
-                var i = 0
-                while (i + 4 <= bytes.size) {
-                    val w = (bytes[i].toInt() and 0xFF) or ((bytes[i + 1].toInt() and 0xFF) shl 8) or
-                        ((bytes[i + 2].toInt() and 0xFF) shl 16) or ((bytes[i + 3].toInt() and 0xFF) shl 24)
-                    if (w == 0xD65F03C0.toInt()) { retIdx = i; break }
-                    i += 4
+            val size = p.size()
+            val reader: (Long) -> Int? = { o ->
+                if (o < 0 || o + 4 > size) null
+                else {
+                    val b = p.read(o, 4)
+                    (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8) or
+                        ((b[2].toInt() and 0xFF) shl 16) or ((b[3].toInt() and 0xFF) shl 24)
                 }
-                val why = if (retIdx < bytes.size)
-                    "hit a ret after %d instruction(s)".format(retIdx / 4)
-                else
-                    "scanned %d instruction(s) without hitting a ret".format(bytes.size / 4)
-                val sample = Hex.fmt(bytes.copyOf(minOf(64, bytes.size)))
+            }
+            val hits = Asm.scanDeep(reader, off)
+            if (hits.isEmpty()) {
+                val sample = Hex.fmt(p.read(off, minOf(64L, size - off).toInt()))
                 show(
                     patchResult,
-                    ("No subtract instruction found (%s).\nFirst bytes at 0x%X:\n%s\n\n" +
-                        "This simple scanner only catches a function whose whole body IS the subtraction. " +
-                        "If Spend() calls a separate helper to do the actual work (common in IL2CPP games), " +
-                        "the real sub instruction is in a different function this never looked at -- open the " +
-                        ".so in a disassembler (e.g. Ghidra), follow any 'bl' call Spend() makes, and point the " +
-                        "manual \"Flip + / -\" button at the subtract you find there.")
-                        .format(why, off, sample)
+                    ("No subtract instruction found, even following branches and calls.\n" +
+                        "First bytes at 0x%X:\n%s\n\n" +
+                        "This can still miss a case where the real work happens through an indirect " +
+                        "(virtual/interface) call, which can't be followed automatically -- open the .so in " +
+                        "a disassembler (e.g. Ghidra), follow the call chain from here by hand, and point the " +
+                        "manual \"Flip + / -\" button at the subtract you find.")
+                        .format(off, sample)
                 )
                 toast("No subtract instruction found nearby")
                 return@bg
             }
             val e = st.elf
-            val labels = hits.map { (rel, desc) ->
-                val fOff = off + rel
+            val labels = hits.map { (fOff, desc, viaCall) ->
                 val vaddr = e?.toVaddr(fOff)
-                (if (vaddr != null) "RVA 0x%X".format(vaddr) else "file 0x%X".format(fOff)) + "  " + desc
+                val addrTxt = if (vaddr != null) "RVA 0x%X".format(vaddr) else "file 0x%X".format(fOff)
+                addrTxt + "  " + desc + (if (viaCall) "  (in a called function)" else "")
             }
             ui {
                 MaterialAlertDialogBuilder(this)
                     .setTitle("${hits.size} subtract instruction(s) found - tap to flip (increase on spend)")
-                    .setItems(labels.toTypedArray()) { _, i -> flipAt(off + hits[i].first) }
+                    .setItems(labels.toTypedArray()) { _, i -> flipAt(hits[i].first) }
                     .setNegativeButton("Cancel", null)
                     .show()
             }
