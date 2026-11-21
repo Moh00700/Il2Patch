@@ -2,7 +2,7 @@
 
 <img src="docs/images/icon.png" width="96" height="96" alt="Il2Patch icon" />
 
-Il2Patch
+# Il2Patch
 
 **A hex / assembly patcher for `libil2cpp.so`, built for offline Unity games you own.**
 Open the file, find the function you want, patch it, save. All on your phone.
@@ -12,6 +12,7 @@ Open the file, find the function you want, patch it, save. All on your phone.
 [![Min SDK](https://img.shields.io/badge/minSdk-26%20(Android%208.0)-informational)](#requirements)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-7F52FF?logo=kotlin&logoColor=white)](#requirements)
 [![Metadata](https://img.shields.io/badge/IL2CPP%20metadata-24--31%20%7C%2039-orange)](#metadata-version-support)
+[![Build](https://img.shields.io/github/actions/workflow/status/<you>/Il2Patch/build.yml?branch=main&label=build)](../../actions)
 
 </div>
 
@@ -26,10 +27,13 @@ experience required for the common cases.
 
 - **Dump & suggest** — reads `global-metadata.dat` + `libil2cpp.so` and lists every class and method
   with its address, parameters and return type. It then flags the functions that most likely control
-  gems/coins, ads, premium/VIP status, unlocks, cooldown timers, tutorial/rate‑us prompts and
-  achievements, each with a ready‑made patch and a one‑tap **Apply fix**.
+  gems/coins, ads, premium/VIP status, unlocks, cooldown timers, tutorial/rate‑us prompts,
+  achievements, god mode and damage, each with a ready‑made patch and a one‑tap **Apply fix**.
 - **Patch by hand** — raw hex, mini‑assembly (`mov w0, #1; ret`), or "make this function always return
   `long 10000`" — pick the type and value, Il2Patch writes the machine code for you.
+- **Flip + / −** — flips a single ARM64 `add`/`sub` instruction in place (e.g. turns `resource -= amount`
+  into `resource += amount`). Point it at the exact subtract instruction (found with Search or a
+  disassembler), not at the function's entry point — see [Resources that increase when spent](#resources-that-increase-when-spent) below.
 - **Batch mode** — a whole list of patches at once, with a dry run and old‑byte verification before
   anything is written.
 - **Pattern search** — find code by a byte pattern with `??` wildcards, since exact offsets change on
@@ -98,8 +102,8 @@ Il2Patch is organized as five tabs at the bottom: **Start → Find → Patch →
    also pick `global-metadata.dat` from the game's files (usually under
    `Android/data/<package>/files/`, or extracted from the APK's `assets/bin/Data/`). Tap **Analyze** —
    Il2Patch reads every class and method and lists the ones worth looking at as cards, grouped by
-   category (Resources, Ads, Premium, Unlocks, Timers, Tutorial, Achievements). Each card shows what
-   it will do, e.g. *"Always returns true"*.
+   category (Resources, Ads, Premium, Unlocks, Timers, Tutorial, Achievements, God Mode, Damage). Each
+   card shows what it will do, e.g. *"Always returns true"* or *"Disabled: does nothing"*.
 
 3. **Find → Apply fix**
    Tap it on any suggestion to patch it immediately — a snackbar lets you **Undo** right away if it's
@@ -147,6 +151,45 @@ or **Everything** (every class and method Il2Patch found) as a JSON file.
 
 ---
 
+## God mode, damage, and resources that increase when spent
+
+These three are a bit different from the other categories, so here's exactly what each one does.
+
+**God mode** looks for damage/death/health‑check functions and offers:
+- `TakeDamage(float)`‑style methods (void, takes a parameter) → **disabled** (patched to `ret`), so
+  taking damage does nothing.
+- `IsDead()` / `IsAlive()`‑style checks (returns bool) → forced to the "not dead" answer.
+- `get_Health()` / `get_HP()`‑style getters (returns a number) → forced to a very large value.
+
+**Damage** looks for attack/damage *getters* (`get_AttackDamage()`, `get_Power()`, etc. — functions
+that return a number and take no parameters) and overrides them to a very large fixed value. This is
+**not a true multiplier** — there's no safe, generic way to read a value a function computes at
+runtime and multiply it while keeping the rest of the function's logic intact with a fixed‑return
+patch, only to replace the return value outright. A suggestion in this category is labelled
+*"not a true multiplier"* so it's clear what you're getting: effectively one‑hit‑kill damage, not
+"2x damage, 3x damage, etc."
+
+### Resources that increase when spent
+
+A function like `Spend(int amount)` usually does `resource -= amount` *in place*, with no return value
+to patch — so it can't be turned into "resource increases" with a one‑tap suggestion the way a
+`bool`/`int`‑returning function can. There's no generic way to automatically find the exact subtract
+instruction inside an arbitrary function either, so this isn't offered as an automatic suggestion.
+
+Instead, use the new **Flip + / − at this address (ARM64)** button on the Patch → Bytes tab:
+1. Find the exact `sub` instruction that does the spending — e.g. with **Search** (a byte pattern), or
+   by opening the `.so` in a disassembler like Ghidra and reading the function's instructions. Point
+   at the instruction itself, not the function's entry point.
+2. Put that instruction's address in the **Offset** field and tap **Flip + / −**.
+3. If it's a recognised `add`/`sub` instruction (and doesn't touch the stack pointer — Il2Patch refuses
+   those, since they're almost always frame setup, not game logic), it's flipped: a `sub` becomes an
+   `add`, so spending now adds to the resource instead of subtracting from it.
+
+This only works on ARM64 (`arm64-v8a`), which is what almost all modern Android devices and Unity
+builds use.
+
+---
+
 ## Metadata version support
 
 | Unity version | Metadata version | Supported |
@@ -162,6 +205,12 @@ and a short diagnostic you can share when asking for help.
 ---
 
 ## FAQ
+
+**Why does the package name say `com.example.il2patch`?**
+`com.example` is Android Studio's default placeholder domain — every new project starts with it, and
+it has no functional meaning. It's safe to leave as is. If you'd rather it said something else (e.g.
+`com.yourname.il2patch`), that's a one‑line change, but like any `applicationId` change, Android will
+then treat it as a different app from whatever's currently installed.
 
 **Why do I need to uninstall the old app after rebuilding?**
 A repacked or rebuilt APK is signed with a different key (or a different `applicationId`) than the
