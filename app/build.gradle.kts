@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.il2patch"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "3.4"
+        versionCode = 9
+        versionName = "3.6"
     }
 
     buildTypes {
