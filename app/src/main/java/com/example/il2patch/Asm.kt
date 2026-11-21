@@ -283,4 +283,32 @@ object Asm {
         }
         return null
     }
+
+    /**
+     * ARM64 only. Scans forward from [bytes] (meant to start at a function's first instruction,
+     * e.g. a "Spend(int amount)"-style method) and returns every subtract instruction
+     * [flipAddSub] would accept (not touching the stack pointer), as (byte offset from the start
+     * of [bytes], description) pairs, in order.
+     *
+     * This is a heuristic over straight-line code, not a real disassembler: it stops at the first
+     * `ret` it sees (the usual end of a short function) or after [maxWords] instructions, and it
+     * does not follow branches. A function with an early-out check, a loop, or a call before the
+     * real subtraction can push the true instruction past the cutoff, make it list an unrelated
+     * subtract first, or miss it entirely -- it exists so the common, simple case ("the whole
+     * function is the subtraction") doesn't need an external disassembler, not to replace one for
+     * every function.
+     */
+    fun scanForSubCandidates(bytes: ByteArray, maxWords: Int = 128): List<Pair<Int, String>> {
+        val out = ArrayList<Pair<Int, String>>()
+        var i = 0
+        while (i + 4 <= bytes.size && i / 4 < maxWords) {
+            val word = (bytes[i].toInt() and 0xFF) or ((bytes[i + 1].toInt() and 0xFF) shl 8) or
+                ((bytes[i + 2].toInt() and 0xFF) shl 16) or ((bytes[i + 3].toInt() and 0xFF) shl 24)
+            if (word == RET64.toInt()) break
+            val flip = flipAddSub(word)
+            if (flip != null && flip.second.startsWith("sub")) out.add(i to flip.second)
+            i += 4
+        }
+        return out
+    }
 }

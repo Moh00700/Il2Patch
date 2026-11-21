@@ -657,11 +657,22 @@ class MainActivity : AppCompatActivity() {
         lateinit var ap: MaterialButton
         ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }
         val edit = btn("Edit", 2) { applySuggestion(s) }
-        return card(
+        val children = mutableListOf<View>(
             top, name, effect,
             hint("returns " + s.ret + "   " + s.note).top(2),
             row(ap, edit)
         )
+        if (s.category == "Resources" && s.kind == "noop") {
+            children.add(
+                btn("Find + increase instead of disable (beta)", 2) {
+                    offsetField.text = "%X".format(s.rva)
+                    rvaSwitch.isChecked = true
+                    goPatch(1)
+                    doScanForSub()
+                }.top(6)
+            )
+        }
+        return card(*children.toTypedArray())
     }
 
     private fun renderSuggestions() {
@@ -899,7 +910,8 @@ class MainActivity : AppCompatActivity() {
                 hint("Hex like 1F 20 03 D5, or assembly like mov w0, #1; ret"),
                 bytesField.layout,
                 row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() }),
-                btn("Flip + / − at this address (ARM64)", 2) { doFlipAddSub() }.top(8)
+                btn("Flip + / − at this address (ARM64)", 2) { doFlipAddSub() }.top(8),
+                btn("Scan this function for subtract (beta, ARM64)", 2) { doScanForSub() }.top(8)
             ),
             card(
                 title("Read bytes"),
@@ -1434,18 +1446,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Reads the 4 bytes at the current address and, if they're an ARM64 add/sub instruction (and
-     * not one touching the stack pointer), flips add<->sub and writes it back. Meant for cases like
-     * "Spend(int amount)" that do `resource -= amount` in place: there's no return value to patch,
-     * but if this is the exact subtract instruction, flipping it makes spending increase the resource
-     * instead of decreasing it. Point it at the instruction itself, found via Search or a disassembler
-     * (e.g. Ghidra) -- not at the function's entry point.
+     * Reads the 4 bytes at file offset [off] and, if they're an ARM64 add/sub instruction (and not
+     * one touching the stack pointer), flips add<->sub and writes it back. Shared by the manual
+     * "Flip + / -" button and by tapping a candidate found by [doScanForSub].
      */
-    private fun doFlipAddSub() {
+    private fun flipAt(off: Long) {
         val p = st.patcher ?: return toast("Open a file first")
-        if (!is64()) return toast("Flip +/- only recognises ARM64 instructions")
-        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
-        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
         if (off < 0 || off + 4 > p.size()) return toast("Address is not inside the file")
         bg {
             val old = p.read(off, 4)
@@ -1454,6 +1460,7 @@ class MainActivity : AppCompatActivity() {
             val flip = Asm.flipAddSub(word)
             if (flip == null) {
                 show(patchResult, "0x%X: %s\nNot a recognised add/sub instruction (or it touches the stack pointer).".format(off, Hex.fmt(old)))
+                toast("Not a recognised add/sub instruction")
                 return@bg
             }
             val (newWord, desc) = flip
@@ -1466,7 +1473,70 @@ class MainActivity : AppCompatActivity() {
             log("0x%X  %s  (was %s, now %s)".format(off, desc, Hex.fmt(old), Hex.fmt(data)))
             setStatus("${p.journal.size} change(s) this session")
             show(patchResult, "0x%X: %s\n%s -> %s".format(off, desc, Hex.fmt(old), Hex.fmt(data)))
-            toast("Flipped: $desc")
+            ui {
+                val sb = Snackbar.make(findViewById(android.R.id.content), "Flipped: $desc", Snackbar.LENGTH_LONG)
+                sb.setAnchorView(nav)
+                sb.setAction("Undo") { undo(false) }
+                sb.show()
+            }
+        }
+    }
+
+    /**
+     * Reads the 4 bytes at the current address and, if they're an ARM64 add/sub instruction (and
+     * not one touching the stack pointer), flips add<->sub and writes it back. Meant for cases like
+     * "Spend(int amount)" that do `resource -= amount` in place: there's no return value to patch,
+     * but if this is the exact subtract instruction, flipping it makes spending increase the resource
+     * instead of decreasing it. Point it at the instruction itself, found via Search, [doScanForSub],
+     * or a disassembler (e.g. Ghidra) -- not at the function's entry point.
+     */
+    private fun doFlipAddSub() {
+        if (!is64()) return toast("Flip +/- only recognises ARM64 instructions")
+        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
+        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
+        flipAt(off)
+    }
+
+    /**
+     * Beta: scans forward from the current address -- meant to be a function's entry point, such
+     * as a Resources "Spend" suggestion's address -- for a subtract instruction, entirely inside
+     * the app, no external disassembler needed. It's a heuristic over straight-line code (see
+     * [Asm.scanForSubCandidates]): for a simple one-line "resource -= amount" function it usually
+     * finds the right instruction immediately, but for anything more complex it may miss it or list
+     * the wrong one first, so check the result (and use Undo if it's not what you wanted).
+     */
+    private fun doScanForSub() {
+        val p = st.patcher ?: return toast("Open a file first")
+        if (!is64()) return toast("Scan only recognises ARM64 instructions")
+        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
+        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
+        if (off < 0 || off >= p.size()) return toast("Address is not inside the file")
+        val winLen = minOf(512L, p.size() - off).toInt()
+        bg {
+            val bytes = p.read(off, winLen)
+            val hits = Asm.scanForSubCandidates(bytes)
+            if (hits.isEmpty()) {
+                show(
+                    patchResult,
+                    "No subtract instruction found in the first %d instruction(s) after 0x%X (or it hit a ret first).\nTry a disassembler (e.g. Ghidra) to find it by hand, or use Search."
+                        .format(winLen / 4, off)
+                )
+                toast("No subtract instruction found nearby")
+                return@bg
+            }
+            val e = st.elf
+            val labels = hits.map { (rel, desc) ->
+                val fOff = off + rel
+                val vaddr = e?.toVaddr(fOff)
+                (if (vaddr != null) "RVA 0x%X".format(vaddr) else "file 0x%X".format(fOff)) + "  " + desc
+            }
+            ui {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("${hits.size} subtract instruction(s) found - tap to flip (increase on spend)")
+                    .setItems(labels.toTypedArray()) { _, i -> flipAt(off + hits[i].first) }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
         }
     }
 
