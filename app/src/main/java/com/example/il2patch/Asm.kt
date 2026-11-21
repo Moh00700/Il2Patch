@@ -298,7 +298,7 @@ object Asm {
      * function is the subtraction") doesn't need an external disassembler, not to replace one for
      * every function.
      */
-    fun scanForSubCandidates(bytes: ByteArray, maxWords: Int = 128): List<Pair<Int, String>> {
+    fun scanForSubCandidates(bytes: ByteArray, maxWords: Int = 1024): List<Pair<Int, String>> {
         val out = ArrayList<Pair<Int, String>>()
         var i = 0
         while (i + 4 <= bytes.size && i / 4 < maxWords) {

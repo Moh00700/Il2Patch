@@ -1511,15 +1511,33 @@ class MainActivity : AppCompatActivity() {
         val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
         val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
         if (off < 0 || off >= p.size()) return toast("Address is not inside the file")
-        val winLen = minOf(512L, p.size() - off).toInt()
+        val winLen = minOf(4096L, p.size() - off).toInt()
         bg {
             val bytes = p.read(off, winLen)
-            val hits = Asm.scanForSubCandidates(bytes)
+            val hits = Asm.scanForSubCandidates(bytes, maxWords = winLen / 4)
             if (hits.isEmpty()) {
+                var retIdx = bytes.size
+                var i = 0
+                while (i + 4 <= bytes.size) {
+                    val w = (bytes[i].toInt() and 0xFF) or ((bytes[i + 1].toInt() and 0xFF) shl 8) or
+                        ((bytes[i + 2].toInt() and 0xFF) shl 16) or ((bytes[i + 3].toInt() and 0xFF) shl 24)
+                    if (w == 0xD65F03C0.toInt()) { retIdx = i; break }
+                    i += 4
+                }
+                val why = if (retIdx < bytes.size)
+                    "hit a ret after %d instruction(s)".format(retIdx / 4)
+                else
+                    "scanned %d instruction(s) without hitting a ret".format(bytes.size / 4)
+                val sample = Hex.fmt(bytes.copyOf(minOf(64, bytes.size)))
                 show(
                     patchResult,
-                    "No subtract instruction found in the first %d instruction(s) after 0x%X (or it hit a ret first).\nTry a disassembler (e.g. Ghidra) to find it by hand, or use Search."
-                        .format(winLen / 4, off)
+                    ("No subtract instruction found (%s).\nFirst bytes at 0x%X:\n%s\n\n" +
+                        "This simple scanner only catches a function whose whole body IS the subtraction. " +
+                        "If Spend() calls a separate helper to do the actual work (common in IL2CPP games), " +
+                        "the real sub instruction is in a different function this never looked at -- open the " +
+                        ".so in a disassembler (e.g. Ghidra), follow any 'bl' call Spend() makes, and point the " +
+                        "manual \"Flip + / -\" button at the subtract you find there.")
+                        .format(why, off, sample)
                 )
                 toast("No subtract instruction found nearby")
                 return@bg
