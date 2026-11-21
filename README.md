@@ -31,9 +31,9 @@ experience required for the common cases.
   achievements, god mode and damage, each with a ready‑made patch and a one‑tap **Apply fix**.
 - **Patch by hand** — raw hex, mini‑assembly (`mov w0, #1; ret`), or "make this function always return
   `long 10000`" — pick the type and value, Il2Patch writes the machine code for you.
-- **Flip + / −** — flips a single ARM64 `add`/`sub` instruction in place (e.g. turns `resource -= amount`
-  into `resource += amount`). Point it at the exact subtract instruction (found with Search or a
-  disassembler), not at the function's entry point — see [Resources that increase when spent](#resources-that-increase-when-spent) below.
+- **Flip + / − / Scan** — turns a resource's `Spend` function into one that increases the resource
+  instead, by flipping a single ARM64 `add`/`sub` instruction in place. The built‑in scanner finds the
+  instruction for you, no external disassembler needed — see [Resources that increase when spent](#resources-that-increase-when-spent) below.
 - **Batch mode** — a whole list of patches at once, with a dry run and old‑byte verification before
   anything is written.
 - **Pattern search** — find code by a byte pattern with `??` wildcards, since exact offsets change on
@@ -173,20 +173,26 @@ patch, only to replace the return value outright. A suggestion in this category 
 
 A function like `Spend(int amount)` usually does `resource -= amount` *in place*, with no return value
 to patch — so it can't be turned into "resource increases" with a one‑tap suggestion the way a
-`bool`/`int`‑returning function can. There's no generic way to automatically find the exact subtract
-instruction inside an arbitrary function either, so this isn't offered as an automatic suggestion.
+`bool`/`int`‑returning function can. There's also no way to be 100% certain, for an arbitrary function,
+which instruction inside it is "the" subtraction — so this still isn't a guaranteed one‑tap fix, but
+there's now a way to do it entirely inside the app, with no external disassembler:
 
-Instead, use the new **Flip + / − at this address (ARM64)** button on the Patch → Bytes tab:
-1. Find the exact `sub` instruction that does the spending — e.g. with **Search** (a byte pattern), or
-   by opening the `.so` in a disassembler like Ghidra and reading the function's instructions. Point
-   at the instruction itself, not the function's entry point.
-2. Put that instruction's address in the **Offset** field and tap **Flip + / −**.
-3. If it's a recognised `add`/`sub` instruction (and doesn't touch the stack pointer — Il2Patch refuses
-   those, since they're almost always frame setup, not game logic), it's flipped: a `sub` becomes an
-   `add`, so spending now adds to the resource instead of subtracting from it.
+1. On a **Resources** suggestion whose effect is *"Disabled: does nothing"* (a `Spend`‑style method),
+   tap **Find + increase instead of disable (beta)**. Or, anywhere on the Patch → Bytes tab, put a
+   function's address in **Offset** and tap **Scan this function for subtract (beta, ARM64)**.
+2. Il2Patch reads the function's own instructions (no Ghidra needed) and lists every `sub` instruction
+   it finds before the function returns, with its address. For a simple `Spend` method there's usually
+   exactly one.
+3. Tap a candidate in the list to flip it immediately (a snackbar offers **Undo** right away) — `sub`
+   becomes `add`, so spending now increases the resource instead of decreasing it.
 
-This only works on ARM64 (`arm64-v8a`), which is what almost all modern Android devices and Unity
-builds use.
+This is a heuristic, not a real disassembler: it reads straight through the function and stops at the
+first `ret`, so it won't follow branches, and a more complex function can still list the wrong
+candidate first or miss the real one. It also refuses anything that looks like stack‑pointer math
+(almost always frame setup, not game logic). Check the result, and use **Undo** if it's not what you
+expected. You can still fall back to **Search** (a byte pattern) or a disassembler like Ghidra for
+anything it doesn't find. ARM64 (`arm64-v8a`) only, which is what almost all modern Android devices and
+Unity builds use.
 
 ---
 
