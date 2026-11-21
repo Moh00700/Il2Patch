@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.DS_Store
+# Generated on first build; delete this line to commit your own stable key
+app/src/main/assets/il2patch.p12
