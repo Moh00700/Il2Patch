@@ -4,17 +4,6 @@ import java.io.ByteArrayOutputStream
 
 class AsmError(msg: String) : Exception(msg)
 
-/**
- * Tiny assembler for the instructions you typically need when stubbing out a function.
- * Not a general assembler.
- *
- * ARM64: nop | ret | mov/movz/movk wN|xN, #imm [, lsl #16|32|48] | fmov sN, wM | fmov dN, xM
- *        reti <int>   (mov w0,#int ; ret)
- *        retf <float> (builds the float in w0, fmov s0,w0 ; ret)
- * ARM32: nop | ret | bx lr | mov/movw rN, #imm16 | reti <int>
- * Also: return <bool|int|long|float|double> <value>   (whole function stub incl. ret)
- * Separate instructions with ';' or a new line.
- */
 object Asm {
     private const val RET64 = 0xD65F03C0L
     private const val FMOV_S0_W0 = 0x1E270000
@@ -54,7 +43,6 @@ object Asm {
         return out.toByteArray()
     }
 
-    /** ARM64: loads [bits] into w/x register [rd] with movz + movk (skips zero chunks). */
     private fun load64(x: Boolean, rd: Int, bits: Long): List<Int> {
         val list = ArrayList<Int>()
         val chunks = if (x) 4 else 2
@@ -72,7 +60,6 @@ object Asm {
         return 0xE3400000L.toInt() or (((i shr 12) and 0xF) shl 16) or (rd shl 12) or (i and 0xFFF)
     }
 
-    /** ARM32: loads a 32-bit value into register [rd] with movw + movt. */
     private fun load32(rd: Int, v: Long): List<Int> {
         val list = ArrayList<Int>()
         list.add(movw(rd, v and 0xFFFF))
@@ -81,10 +68,6 @@ object Asm {
         return list
     }
 
-    /**
-     * Code that makes a function return a constant. [type]: bool, int, long, float, double.
-     * ARM64: result in w0/x0 (float/double in s0/d0). ARM32 (softfp ABI): result in r0 (r0:r1 for 64-bit).
-     */
     fun returnValue(type: String, text: String, is64: Boolean): ByteArray {
         val t = text.trim()
         if (t.isEmpty()) throw AsmError("enter a value")
@@ -106,10 +89,7 @@ object Asm {
                 bits = v and 0xFFFFFFFFL
                 wide = false; fp = false
             }
-            "long" -> {
-                bits = imm(t)
-                wide = true; fp = false
-            }
+            "long" -> { bits = imm(t); wide = true; fp = false }
             "float" -> {
                 val f = t.toFloatOrNull() ?: throw AsmError("bad float '$t'")
                 bits = f.toRawBits().toLong() and 0xFFFFFFFFL
@@ -122,7 +102,6 @@ object Asm {
             }
             else -> throw AsmError("unknown type '$type'")
         }
-
         val w = ArrayList<Int>()
         if (is64) {
             w.addAll(load64(wide, 0, bits))
@@ -139,16 +118,12 @@ object Asm {
     private fun imm(s: String?): Long {
         var x = (s ?: throw AsmError("missing immediate")).trim().removePrefix("#")
         var neg = false
-        if (x.startsWith("-")) {
-            neg = true
-            x = x.substring(1)
-        }
+        if (x.startsWith("-")) { neg = true; x = x.substring(1) }
         val v = (if (x.startsWith("0x")) x.substring(2).toLongOrNull(16) else x.toLongOrNull())
             ?: throw AsmError("bad immediate '$s'")
         return if (neg) -v else v
     }
 
-    /** Returns (is64bitRegister, number). */
     private fun reg64(s: String?): Pair<Boolean, Int> {
         val t = s ?: throw AsmError("missing register")
         if (t == "wzr") return Pair(false, 31)
@@ -252,18 +227,6 @@ object Asm {
         throw AsmError("unsupported ARM32 instruction '${t[0]}'")
     }
 
-    /**
-     * ARM64 only. If [word] is an "add/subtract (immediate)" or "add/subtract (shifted register)"
-     * instruction, returns the same instruction with ADD and SUB swapped, plus a short description.
-     * Refuses anything touching the stack pointer (register 31 in these two instruction classes),
-     * since that is almost always frame setup/teardown, not game logic, and the extended-register
-     * form, to stay conservative. Returns null when [word] doesn't match, or isn't recognised.
-     *
-     * This exists for cases like "Spend(int amount)" that do `resource -= amount` in place: there is
-     * no return value to patch, but if you can find the exact subtract instruction (e.g. with pattern
-     * search, or in a disassembler), flipping it to an add makes spending increase the resource
-     * instead of decreasing it.
-     */
     fun flipAddSub(word: Int): Pair<Int, String>? {
         val rd = word and 0x1F
         val rn = (word ushr 5) and 0x1F
@@ -273,31 +236,17 @@ object Asm {
         val now = if (opBit == 0) "add" else "sub"
         val to = if (opBit == 0) "sub" else "add"
         if (immClass == 0b10001) {
-            if (rd == 31 || rn == 31) return null // SP in this class: stack frame, refuse
+            if (rd == 31 || rn == 31) return null
             return (word xor (1 shl 30)) to "$now (immediate) -> $to"
         }
         if (regClass == 0b01011) {
-            if (((word ushr 21) and 1) == 1) return null // extended-register form, stay conservative
+            if (((word ushr 21) and 1) == 1) return null
             if (rd == 31 || rn == 31) return null
             return (word xor (1 shl 30)) to "$now (register) -> $to"
         }
         return null
     }
 
-    /**
-     * ARM64 only. Scans forward from [bytes] (meant to start at a function's first instruction,
-     * e.g. a "Spend(int amount)"-style method) and returns every subtract instruction
-     * [flipAddSub] would accept (not touching the stack pointer), as (byte offset from the start
-     * of [bytes], description) pairs, in order.
-     *
-     * This is a heuristic over straight-line code, not a real disassembler: it stops at the first
-     * `ret` it sees (the usual end of a short function) or after [maxWords] instructions, and it
-     * does not follow branches. A function with an early-out check, a loop, or a call before the
-     * real subtraction can push the true instruction past the cutoff, make it list an unrelated
-     * subtract first, or miss it entirely -- it exists so the common, simple case ("the whole
-     * function is the subtraction") doesn't need an external disassembler, not to replace one for
-     * every function.
-     */
     fun scanForSubCandidates(bytes: ByteArray, maxWords: Int = 1024): List<Pair<Int, String>> {
         val out = ArrayList<Pair<Int, String>>()
         var i = 0
@@ -312,37 +261,25 @@ object Asm {
         return out
     }
 
-    /**
-     * ARM64 only, beta. A control-flow-aware scan for subtract instructions: unlike
-     * [scanForSubCandidates], which only looks at the straight-line path and gives up at the first
-     * `ret` or branch, this one follows conditional branches (both ways), unconditional branches,
-     * and `bl` calls (up to [maxCallDepth] levels deep), since real compiled functions are full of
-     * exactly that -- a guard check here, a shared "clamp and subtract" helper called from several
-     * places there.
-     *
-     * It works purely in file-offset deltas: branch/call immediates are PC-relative, and adding the
-     * raw byte delta to the current file offset is correct as long as the source and target sit in
-     * the same ELF load segment, which holds for ordinary intra-library control flow. [read] must
-     * return the 4-byte little-endian word at a file offset, or null when that offset is out of
-     * bounds (at which point that path is simply abandoned). A global visited-offset set bounds
-     * both loops (a backward branch is only ever walked once) and the total amount of work
-     * ([maxVisits] instructions overall).
-     *
-     * Each hit is (file offset, description, viaCall): viaCall is true when that candidate was only
-     * reached by following a `bl`, meaning it lives in a different function than [startOff] -- worth
-     * knowing before flipping it, since that function may be called from other places too, including
-     * ones you don't want changed.
-     *
-     * Still not a real disassembler: no register or data-flow tracking, so if a function contains
-     * more than one subtract, this can't tell which one actually touches the resource you care
-     * about, and an indirect call through a register (a virtual/interface method call) can't be
-     * followed at all, only a direct `bl`.
-     */
+    /** Human-readable context: "sub x5, x5, x1" — registers tell you which sub is the resource. */
+    fun describeSub(word: Int): String {
+        val rd = word and 0x1F
+        val rn = (word ushr 5) and 0x1F
+        val rm = (word ushr 16) and 0x1F
+        val immClass = (word ushr 24) and 0x1F
+        return if (immClass == 0b10001) {
+            val imm12 = (word ushr 10) and 0xFFF
+            "sub x$rd, x$rn, #$imm12"
+        } else {
+            "sub x$rd, x$rn, x$rm"
+        }
+    }
+
     fun scanDeep(
         read: (Long) -> Int?,
         startOff: Long,
         maxVisits: Int = 4096,
-        maxCallDepth: Int = 2
+        maxCallDepth: Int = 3
     ): List<Triple<Long, String, Boolean>> {
         data class Item(val off: Long, val depth: Int, val viaCall: Boolean)
         val out = ArrayList<Triple<Long, String, Boolean>>()
@@ -364,33 +301,36 @@ object Asm {
                 val top8 = (word ushr 24) and 0xFF
                 var stop = false
                 when {
-                    top6 == 0b011011 -> { // TBZ/TBNZ
+                    top6 == 0b011011 -> {
                         val b5 = (word ushr 31) and 1
-                        val b40 = (word ushr 19) and 0x1F
                         var imm14 = (word ushr 5) and 0x3FFF
                         if (imm14 and 0x2000 != 0) imm14 -= 0x4000
                         queue.addLast(Item(off + imm14 * 4L, depth, viaCall))
                     }
-                    top6 == 0b011010 -> { // CBZ/CBNZ
+                    top6 == 0b011010 -> {
                         var imm19 = (word ushr 5) and 0x7FFFF
                         if (imm19 and 0x40000 != 0) imm19 -= 0x80000
                         queue.addLast(Item(off + imm19 * 4L, depth, viaCall))
                     }
-                    top8 == 0x54 && ((word ushr 4) and 1) == 0 -> { // B.cond
+                    top8 == 0x54 && ((word ushr 4) and 1) == 0 -> {
                         var imm19 = (word ushr 5) and 0x7FFFF
                         if (imm19 and 0x40000 != 0) imm19 -= 0x80000
                         queue.addLast(Item(off + imm19 * 4L, depth, viaCall))
                     }
-                    ((word ushr 26) and 0x3F) == 0b000101 -> { // B (unconditional) -- path ends here
+                    ((word ushr 26) and 0x3F) == 0b000101 -> {
                         var imm26 = word and 0x3FFFFFF
                         if (imm26 and 0x2000000 != 0) imm26 -= 0x4000000
                         queue.addLast(Item(off + imm26 * 4L, depth, viaCall))
                         stop = true
                     }
-                    ((word ushr 26) and 0x3F) == 0b100101 -> { // BL (call)
+                    ((word ushr 26) and 0x3F) == 0b100101 -> {
                         var imm26 = word and 0x3FFFFFF
                         if (imm26 and 0x2000000 != 0) imm26 -= 0x4000000
                         if (depth < maxCallDepth) queue.addLast(Item(off + imm26 * 4L, depth + 1, true))
+                    }
+                    // BLR Xn — indirect / virtual call, target cannot be resolved from bytes alone.
+                    ((word ushr 22) and 0x3FF) == 0b1101011000 && ((word ushr 10) and 0x3F) == 0b111111 && ((word ushr 5) and 0x1F) != 31 -> {
+                        out.add(Triple(off, "indirect-call (BLR, cannot follow)", viaCall))
                     }
                     else -> {
                         val flip = flipAddSub(word)
