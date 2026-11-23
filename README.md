@@ -2,10 +2,9 @@
 
 <img src="docs/images/icon.png" width="150" alt="Il2Patch logo">
 
+<h1>Il2Patch"</h1>
+
 ---
-
-
-Il2Patch
 
 <b>A hex / assembly patcher for <code>libil2cpp.so</code>, built for offline Unity games you own.</b><br>
   Open the file, find the function you want, patch it, save. All on your phone.
