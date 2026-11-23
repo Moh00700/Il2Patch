@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var nav: BottomNavigationView
     private lateinit var pages: List<View>
-    private val navIds = listOf(R.id.nav_start, R.id.nav_find, R.id.nav_patch)
+    private val navIds = listOf(R.id.nav_start, R.id.nav_find, R.id.nav_patch, R.id.nav_settings)
     private var curPage = 0
     private lateinit var hintText: TextView
     private lateinit var targetCard: MaterialCardView
@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
     private fun cOnPrimaryContainer(): Int = if (isNightNow()) 0xFFE8E0FF.toInt() else 0xFF1A1A1A.toInt()
     private fun cPrimaryContainer(): Int = if (isNightNow()) 0xFF3B2FC9.toInt() else 0xFFE8E0FF.toInt()
     private fun cSurfaceVariant(): Int = if (isNightNow()) 0xFF2A2A33.toInt() else 0xFFF2F0FA.toInt()
-    private fun cOnSurface(): Int = if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF121216.toInt()
+    private fun cOnSurface(): Int = if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF1E1B2E.toInt()
     private fun cOnVariant(): Int = if (isNightNow()) 0xFFCAC4D0.toInt() else 0xFF5A5A6A.toInt()
     private fun cError(): Int = if (isNightNow()) 0xFFF2B8B5.toInt() else 0xFFB3261E.toInt()
     private fun cSuccess(): Int = 0xFF1E8E5A.toInt()
@@ -327,7 +327,7 @@ class MainActivity : AppCompatActivity() {
         }
         // Rebuild icon bg as tinted circle using gradStart at low alpha on card bg
         iconView.background = GradientDrawable().apply {
-            setColor(if (isNightNow()) (gradStart and 0x00FFFFFF) or 0x33000000 else (gradStart and 0x00FFFFFF) or 0x22000000)
+            setColor(0xB3FFFFFF.toInt()) // white translucent — same as the other rows
             cornerRadius = dp(16).toFloat()
         }
         val titleV = tv(cleanText(titleText), MR.style.TextAppearance_Material3_TitleMedium).apply {
@@ -361,9 +361,9 @@ class MainActivity : AppCompatActivity() {
         c.addView(row.apply { setPadding(dp(16), dp(16), dp(16), dp(16)) })
         c.radius = dp(24).toFloat()
         // All Start rows: light-purple gradient, same in light + dark
-        c.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFE9D5FF.toInt(), 0xFFC4B5FD.toInt())).apply { cornerRadius = dp(24).toFloat() }
+        c.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFC4B5FD.toInt(), 0xFF4C1D95.toInt())).apply { cornerRadius = dp(24).toFloat() }
         c.setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
-        titleV.setTextColor(0xFF1E1B4B.toInt()); subV.setTextColor(0xFF1E1B4B.toInt()); subV.alpha = 0.85f
+        titleV.setTextColor(0xFFFFFFFF.toInt()); subV.setTextColor(0xFFFFFFFF.toInt()); subV.alpha = 0.85f
         c.cardElevation = dp(2).toFloat(); c.strokeWidth = 0
         c.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
         c.setOnClickListener { onClick() }
@@ -378,7 +378,7 @@ class MainActivity : AppCompatActivity() {
         typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cSuccess().toInt())
     }
     private fun page(vararg views: View) = ScrollView(this).apply {
-        setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
+        setBackgroundColor(if (isNightNow()) 0xFF1E1B2E.toInt() else 0xFFFFFFFF.toInt())
         val col = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(32))
         }
@@ -471,11 +471,11 @@ class MainActivity : AppCompatActivity() {
     private fun header(): View {
         // MORPHE style: big plain title at top-left, NO logo+title row.
         // "Il" in blue-teal like Morphe's "M", rest white/dark. Subtitle small grey below.
-        // Top-right: circular Search button -> Find (Settings tab removed).
+        // Top-right: Search -> Find, Gear -> Settings (Log tab removed).
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(16), dp(20), dp(8))
-            setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
+            setBackgroundColor(if (isNightNow()) 0xFF1E1B2E.toInt() else 0xFFFFFFFF.toInt())
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -488,7 +488,7 @@ class MainActivity : AppCompatActivity() {
             // True gradient: light purple #E9D5FF -> #A78BFA, applied once width is known
             post {
                 paint.shader = android.graphics.LinearGradient(0f, 0f, width.toFloat(), 0f,
-                    intArrayOf(0xFFE9D5FF.toInt(), 0xFFC4B5FD.toInt(), 0xFFA78BFA.toInt()),
+                    intArrayOf(0xFFDDD6FE.toInt(), 0xFFA78BFA.toInt(), 0xFF7C3AED.toInt()),
                     null, android.graphics.Shader.TileMode.CLAMP)
                 invalidate()
             }
@@ -514,6 +514,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { onClick() }
         }
         row.addView(circleBtn("🔍") { go(1) }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(8) })
+        row.addView(circleBtn("⚙") { go(3) }, LinearLayout.LayoutParams(dp(48), dp(48)))
         outer.addView(row)
         statusText = hint(st.status, cOnSurface()).apply { visibility = View.GONE }
         outer.addView(statusText)
@@ -525,7 +526,7 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             // Force modern bg — do NOT rely on themes.xml windowBackground
-            setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
+            setBackgroundColor(if (isNightNow()) 0xFF1E1B2E.toInt() else 0xFFFFFFFF.toInt())
         }
         root.addView(header())
         progress = LinearProgressIndicator(this).apply { isIndeterminate = true; visibility = View.INVISIBLE }
@@ -539,7 +540,7 @@ class MainActivity : AppCompatActivity() {
             offsetField.asView(), rvaSwitch
         )
         autoSwitch = sw("Write each change straight into the original file", prefs.getBoolean("def_auto", true))
-        pages = listOf(startPage(), findPage(), patchPage())
+        pages = listOf(startPage(), findPage(), patchPage(), settingsPage())
         val frame = FrameLayout(this)
         pages.forEach { frame.addView(it, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)) }
         root.addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
@@ -547,14 +548,14 @@ class MainActivity : AppCompatActivity() {
         // rounded 32dp, soft shadow. Selected tab gets indigo pill highlight via theme.
         nav = BottomNavigationView(this).apply {
             inflateMenu(R.menu.nav)
-            menu.removeItem(R.id.nav_settings); menu.removeItem(R.id.nav_log)
+            menu.removeItem(R.id.nav_log) // Settings stays, Log is removed
             labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
             // MORPHE bottom bar: floating dark translucent pill, selected tab gets
             // a light-lavender pill behind its icon+label, unselected = grey.
-            background = pillDrawable(if (isNightNow()) 0xE62A2A33.toInt() else 0xF2FFFFFF.toInt(), 32)
+            background = pillDrawable(if (isNightNow()) 0xE6252138.toInt() else 0xF2FFFFFF.toInt(), 32)
             // Selected pill (Material3 active indicator) — exactly Morphe's light lavender
             itemActiveIndicatorColor = android.content.res.ColorStateList.valueOf(0xFFB8B5D6.toInt())
-            val sel = if (isNightNow()) 0xFF121216.toInt() else 0xFF121216.toInt()
+            val sel = if (isNightNow()) 0xFF1E1B2E.toInt() else 0xFF1E1B2E.toInt()
             val unsel = if (isNightNow()) 0xFF9A93A8.toInt() else 0xFF6B6B7A.toInt()
             itemIconTintList = android.content.res.ColorStateList(
                 arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
@@ -623,11 +624,11 @@ class MainActivity : AppCompatActivity() {
             }
             val tV = tv(titleText, MR.style.TextAppearance_Material3_TitleMedium).apply {
                 typeface = fontTitle(); textSize = 18f
-                setTextColor(0xFF1E1B4B.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
             }
             val sV = tv(subtitleText, MR.style.TextAppearance_Material3_BodySmall).apply {
                 textSize = 13f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END
-                setTextColor(0xFF1E1B4B.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
                 alpha = 0.85f
             }
             val mid = LinearLayout(this).apply {
@@ -654,23 +655,27 @@ class MainActivity : AppCompatActivity() {
             return MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle).apply {
                 addView(row); radius = dp(20).toFloat()
                 // All Start rows: light-purple gradient (same in light + dark)
-                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFE9D5FF.toInt(), 0xFFC4B5FD.toInt())).apply { cornerRadius = dp(20).toFloat() }
+                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFC4B5FD.toInt(), 0xFF4C1D95.toInt())).apply { cornerRadius = dp(20).toFloat() }
                 setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
-                tV.setTextColor(0xFF1E1B4B.toInt()); sV.setTextColor(0xFF1E1B4B.toInt())
+                tV.setTextColor(0xFFFFFFFF.toInt()); sV.setTextColor(0xFFFFFFFF.toInt())
                 cardElevation = dp(2).toFloat(); strokeWidth = 0
                 layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
                 setOnClickListener { onClick() }
             }
         }
-        val metaSub = if (st.metaName.isEmpty()) "App name, version, package ID" else st.metaName
-        // Metadata icon: old 🗎 glyph did not render on Samsung — 🗂️ always shows
-        val metaRow = mockupRow("🗂️", "Metadata", metaSub, "Edit") { pickMeta() }
-        // Import row — same style as Metadata (replaces the deleted hero)
-        val importRow = mockupRow("⬇️", "Import libil2cpp.so", "Pick libil2cpp.so or the game APK", "Import") { pickFile() }
-        val targetSub = if (st.srcName.isEmpty()) "output/patched_apk" else st.srcName
-        val targetRow = mockupRow("📍", "Target address", targetSub, "Browse") { pickFile() }
+        val metaSub = if (st.metaName.isEmpty()) "Pick global-metadata.dat" else st.metaName
+        // libil2cpp.so row is back — title has NO "Import" word in it, button is "Import" like the metadata row
+        val libRow = mockupRow("⬇️", "libil2cpp.so", "Pick libil2cpp.so or the game APK", "Import") { pickFile() }
+        // Was "Metadata / Edit" — now the real file name + Import button
+        val metaRow = mockupRow("🗂️", "global-metadata.dat", metaSub, "Import") { pickMeta() }
         // Save row removed — patches auto-save via the Direct-mode switch below.
         val undoRow = morpheRow("↩️", "Undo last change", "Removes the last patch", "Undo", 0xFFB3261E.toInt(), 0xFF0D9488.toInt()) { undo(false) }
+        // Log on Start: shows "Loaded libil2cpp.so" AND "Metadata loaded: ..." the same way,
+        // because both finishLoad() and the metadata import call log().
+        logText = tv(if (st.log.isEmpty()) "Nothing yet." else st.log, MR.style.TextAppearance_Material3_BodySmall).apply {
+            typeface = fontMono(); textSize = 11f; setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
+        }
+        val logCard = card(title("📜  Log"), subtitle("What the app did last — imports, patches, errors."), logText)
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), 0)
             addView(infoText)
@@ -681,7 +686,7 @@ class MainActivity : AppCompatActivity() {
                 addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(16) })
             })
         }
-        return page(importRow, metaRow, targetRow, undoRow, statusRow)
+        return page(libRow, metaRow, undoRow, statusRow, logCard)
     }
 
     private fun findPage(): ScrollView {
@@ -690,10 +695,8 @@ class MainActivity : AppCompatActivity() {
         val adv = section(
             hint("Normally we skip UnityEngine / System so the list stays clean. Turn this ON only if you are hunting a 【entity-Unity¦canonical_name=Unity】 or System function on purpose.").top(4),
             includeAllSwitch).apply { visibility = View.GONE }
-        val files = card(
-            title("🗂️  Metadata"),
-            subtitle("global-metadata.dat = real names of every class & method. Without it, Find can't suggest."),
-            metaText, rowAsym(btn("Pick metadata file", 1) { pickMeta() }, btn("Advanced", 2) { toggle(adv) }), adv)
+        // Metadata pick removed from Find — import it once on Start (global-metadata.dat row).
+        // metaText is kept as a plain object so the metadata import + clearCache don't crash.
         sumText = tv(summaryLine(), MR.style.TextAppearance_Material3_BodyLarge).apply { typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()) }
         dumpSummary = hint(if (st.dumpReport.isEmpty()) "" else st.dumpReport).apply {
             typeface = fontMono(); textSize = 11f; setTextIsSelectable(true); visibility = View.GONE
@@ -702,6 +705,7 @@ class MainActivity : AppCompatActivity() {
             title("🔍  Analyze"),
             subtitle("Reads every class and method and picks the ones that likely control gems / coins, ads, premium, stats, weapons, movement, enemies, map, saves, shop, daily rewards, settings, vehicles or bars. Names are hints — always test in-game."),
             btn("Analyze") { doAnalyze() }.top(12), sumText.top(12),
+            btn("Advanced", 2) { toggle(adv) }.top(8), adv.top(4),
             btn("Show technical details", 2) { toggle(dumpSummary) }.top(8), dumpSummary.top(8))
         // Wrapping category chips: 3 per row, NO horizontal scroll — all categories visible
         selectedCats.clear(); chipButtons.clear()
@@ -722,7 +726,7 @@ class MainActivity : AppCompatActivity() {
                 if (b.isChecked) selectedCats.add(c) else selectedCats.remove(c)
                 // Same colour/style for all chips: indigo when on, outline when off
                 b.backgroundTintList = android.content.res.ColorStateList.valueOf(if (b.isChecked) 0xFF4A44D6.toInt() else 0x00000000.toInt())
-                b.setTextColor(if (b.isChecked) 0xFFFFFFFF.toInt() else if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF121216.toInt())
+                b.setTextColor(if (b.isChecked) 0xFFFFFFFF.toInt() else if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF1E1B2E.toInt())
                 sugLimit = 30; renderSuggestions()
             }
             selectedCats.add(c)
@@ -740,13 +744,12 @@ class MainActivity : AppCompatActivity() {
         val exp = card(
             title("📤  Export"),
             subtitle("Save results as JSON so you can share them, compare two versions of a game, or keep a backup of what you found."),
-            row(btn("Suggestions only", 1) { exportSuggestions() }, btn("Everything", 1) { exportJson() }))
+            row(btn("Suggestions", 1) { exportSuggestions() }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, btn("Everything", 1) { exportJson() }.apply { maxLines = 1 })
         val pg = page(
             explainer("🔎", "Find — what to patch",
                 "Find functions by NAME. Green = what the patch does. Apply fix patches at once, Edit checks it in Patch first."),
-            label("🗂️  1  FILES", cPrimary()), files,
-            label("🔍  2  SCAN", cSuccess()), run,
-            label("✅  3  FIX", cSuccess()),
+            label("🔍  1  SCAN", cSuccess()), run,
+            label("✅  2  FIX", cSuccess()),
             subtitle("Tap a category chip to filter. Un-tap it to hide that whole category."),
             chipFlow, filterField.asView(),
             emptyText, sugList.top(0), moreBtn.top(4),
@@ -795,8 +798,8 @@ class MainActivity : AppCompatActivity() {
             typeface = fontBodyMedium(); setTextColor((if (s.kind == "noop") cWarning() else cSuccess()).toInt())
         }
         lateinit var ap: MaterialButton
-        ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }
-        val edit = btn("Edit", 2) { applySuggestion(s) }
+        ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        val edit = btn("Edit", 2) { applySuggestion(s) }.apply { maxLines = 1 }
         return card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), row(ap, edit))
     }
     private fun renderSuggestions() {
@@ -930,6 +933,7 @@ class MainActivity : AppCompatActivity() {
         types.forEach { t ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
             b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
+            b.setPadding(dp(14), 0, dp(14), 0); b.minimumWidth = 0; b.maxLines = 1
             typeGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
             typeIds.add(b.id)
         }
@@ -942,7 +946,7 @@ class MainActivity : AppCompatActivity() {
                 title("🟢  Make the function return a value"),
                 subtitle("Easiest patch. The function stops running its old code and just returns your value. Best for getters: GetGems, IsPremium, GetHealth."),
                 hint("① Pick the type the function returns (check Find — it says “returns int / bool / float”).  ② Type the value.  ③ Tap Patch function."),
-                uniformSeg(typeGroup, 12), valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
+                segRow(typeGroup, 12), valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
             card(title("📋  Result"), subtitle("Green = patched. If it says “runs past end”, your address is wrong."), returnResult)
         )
         bytesField = Field("New bytes: hex or assembly", 3, true,
@@ -1002,6 +1006,59 @@ class MainActivity : AppCompatActivity() {
         segGroup.check(segIds[0]); showSeg(0); return pg
     }
 
+
+    // ---------- SETTINGS (tab restored — Log stays removed) ----------
+    private fun settingsPage(): ScrollView {
+        fun themeBtn(text: String, mode: Int): MaterialButton = MaterialButton(this).apply {
+            this.text = text; isAllCaps = false; typeface = fontBodyMedium()
+            cornerRadius = dp(16); minimumHeight = dp(44)
+            val active = prefs.getInt("night", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM) == mode
+            backgroundTintList = android.content.res.ColorStateList.valueOf(if (active) 0xFF4C1D95.toInt() else 0x00000000.toInt())
+            setTextColor(if (active) 0xFFFFFFFF.toInt() else if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF1E1B4B.toInt())
+            setPadding(dp(16), 0, dp(16), 0)
+            setOnClickListener {
+                prefs.edit().putInt("night", mode).apply()
+                AppCompatDelegate.setDefaultNightMode(mode)
+                recreate()
+            }
+        }
+        val auto = sw("Write into original file", prefs.getBoolean("def_auto", true)).apply {
+            setOnCheckedChangeListener { _, c ->
+                prefs.edit().putBoolean("def_auto", c).apply()
+                if (::autoSwitch.isInitialized) autoSwitch.isChecked = c
+            }
+        }
+        val rva = sw("Use RVA by default", prefs.getBoolean("def_rva", true)).apply {
+            setOnCheckedChangeListener { _, c ->
+                prefs.edit().putBoolean("def_rva", c).apply()
+                if (::rvaSwitch.isInitialized) rvaSwitch.isChecked = c
+            }
+        }
+        val dry = sw("Dry run by default", prefs.getBoolean("def_dry", false)).apply {
+            setOnCheckedChangeListener { _, c ->
+                prefs.edit().putBoolean("def_dry", c).apply()
+                if (::dryCheck.isInitialized) dryCheck.isChecked = c
+            }
+        }
+        return page(
+            explainer("⚙️", "Settings",
+                "Appearance, defaults and storage. Defaults apply to Find and Patch."),
+            label("🎨  APPEARANCE", cPrimary()),
+            card(title("Theme"), subtitle("How Il2Patch looks"),
+                row(themeBtn("System", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM),
+                    themeBtn("Dark", AppCompatDelegate.MODE_NIGHT_YES),
+                    themeBtn("Light", AppCompatDelegate.MODE_NIGHT_NO))),
+            label("🎯  DEFAULTS", cPrimary()),
+            card(title("Patch defaults"), subtitle("These are used when Find / Patch open."),
+                auto, rva, dry),
+            label("🧹  STORAGE", cPrimary()),
+            card(title("Clear cache"), subtitle("Clears metadata + APK copies"),
+                btn("Clear cache", 1) { clearCache() }),
+            label("ℹ️  ABOUT", cPrimary()),
+            card(title("Il2Patch"), subtitle("For offline games you own. Patch libil2cpp.so / APKs you own."))
+        )
+    }
+
     // ---------- LOG (tab removed — log still kept in memory) ----------
     private fun clearCache() {
         bg {
@@ -1036,7 +1093,7 @@ class MainActivity : AppCompatActivity() {
         patchResult.text = b.getString("r1") ?: "Nothing yet."; returnResult.text = b.getString("r2") ?: "Nothing yet."
         batchResult.text = b.getString("r3") ?: "Nothing yet."; searchResult.text = b.getString("r4") ?: "Nothing yet."
         val si = b.getInt("seg", 0); if (si in segIds.indices) segGroup.check(segIds[si])
-        go(b.getInt("tab", 0).coerceIn(0, 2), false)
+        go(b.getInt("tab", 0).coerceIn(0, 3), false)
     }
 
     private fun pickFile() {
