@@ -744,7 +744,7 @@ class MainActivity : AppCompatActivity() {
         val exp = card(
             title("📤  Export"),
             subtitle("Save results as JSON so you can share them, compare two versions of a game, or keep a backup of what you found."),
-            row(btn("Suggestions", 1) { exportSuggestions() }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, btn("Everything", 1) { exportJson() }.apply { maxLines = 1 })
+            row(btn("Suggestions", 1) { exportSuggestions() }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, btn("Everything", 1) { exportJson() }.apply { maxLines = 1 }))
         val pg = page(
             explainer("🔎", "Find — what to patch",
                 "Find functions by NAME. Green = what the patch does. Apply fix patches at once, Edit checks it in Patch first."),
