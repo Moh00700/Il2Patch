@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Il2Patch — FileProvider paths
+     Used by AndroidManifest.xml -> provider android:resource="@xml/file_paths"
+     This is what lets the app share the patched APK / patched .so
+     with the installer / other apps safely. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- App private cache — patched APK built here before install -->
+    <cache-path
+        name="cache"
+        path="." />
+
+    <!-- App private files — work.bin, patched .so, logs -->
+    <files-path
+        name="files"
+        path="." />
+
+    <!-- External files — Downloads / Il2Patch folder, user picks Save copy as... here -->
+    <external-files-path
+        name="external_files"
+        path="." />
+
+    <!-- External cache -->
+    <external-cache-path
+        name="external_cache"
+        path="." />
+
+    <!-- External storage root — lets FileProvider share a file the user
+         picked from Downloads / Documents -->
+    <external-path
+        name="external"
+        path="." />
+
+</paths>
