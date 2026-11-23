@@ -48,6 +48,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.ByteBuffer
+import com.example.il2patch.ui.theme.Il2PatchTheme
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -143,6 +144,13 @@ class MainActivity : AppCompatActivity() {
     private fun fontBodyMedium(): Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     private fun fontMono(): Typeface = Typeface.MONOSPACE
 
+    // Clearer section header: emoji + title + "why it matters" line, Material You colors
+    private fun sectionHeader(emoji: String, titleText: String, why: String): View {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(title("$emoji  $titleText"))
+        col.addView(hint(why))
+        return col
+    }
     private fun tv(text: CharSequence, style: Int = MR.style.TextAppearance_Material3_BodyMedium) =
         TextView(this).apply { this.text = text; setTextAppearance(style); typeface = fontBody() }
 
@@ -278,6 +286,26 @@ class MainActivity : AppCompatActivity() {
             if (::nav.isInitialized) s.setAnchorView(nav); s.show()
         }
     }
+
+    // ---------- MERGED: Material You helpers (added, no old logic changed) ----------
+    // Snackbar with Undo - shows after a patch, lets user undo 1 change instantly.
+    private fun snackbarWithUndo(msg: String, undoAction: (() -> Unit)? = null) {
+        runOnUiThread {
+            val s = Snackbar.make(findViewById(android.R.id.content), msg, Snackbar.LENGTH_LONG)
+            if (undoAction != null) {
+                s.setAction("Undo") { undoAction() }
+            }
+            // Material You: use theme colors for snackbar
+            s.setBackgroundTint(Il2PatchTheme.snackbarBackground(this))
+            s.setTextColor(Il2PatchTheme.snackbarText(this))
+            s.setActionTextColor(Il2PatchTheme.snackbarAction(this))
+            s.show()
+        }
+    }
+    // Show a patch result + offer Undo in one place. Call this after applyOne / doPatch / doReturnValue / flip.
+    private fun showPatchedWithUndo(count: Int = 1) {
+        snackbarWithUndo("Applied $count patch(es) - tap Undo to revert") { undo(false) }
+    }
     private fun ui(block: () -> Unit) { runOnUiThread { block() } }
     private fun show(v: TextView, s: String) { runOnUiThread { v.text = s } }
     private fun setStatus(s: String) { st.status = s; runOnUiThread { statusText.text = s } }
@@ -297,6 +325,8 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("ui", MODE_PRIVATE)
         AppCompatDelegate.setDefaultNightMode(prefs.getInt("night", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
         super.onCreate(savedInstanceState)
+        // MERGED: Apply saved Material You theme BEFORE building UI (no white flash)
+        Il2PatchTheme.applySavedTheme(this)
         work = File(filesDir, "work.bin")
         setContentView(buildUi())
         restore(savedInstanceState)
@@ -445,7 +475,7 @@ class MainActivity : AppCompatActivity() {
             row(btn("Suggestions only", 1) { exportSuggestions() }, btn("Everything", 1) { exportJson() }))
         val pg = page(
             explainer("🔎", "Find — what to patch",
-                "This tab finds functions by their NAME. Green text = what the patch will do. Tap Apply fix to patch at once, or Edit to check it in Patch first."),
+                "🎯 READ THIS FIRST: This tab finds functions by their NAME. Green text = what the patch will do. Tap Apply fix to patch at once, or Edit to check it in Patch first."),
             label("🗂️  1  FILES", cPrimary()), files,
             label("🔍  2  SCAN", cSuccess()), run,
             label("✅  3  FIX", cSuccess()),
@@ -1131,7 +1161,7 @@ class MainActivity : AppCompatActivity() {
             if (failed > 0) out.add("Nothing applied: $failed error(s).")
             else if (dry) out.add("Dry run OK: ${planned.size} patch(es) would be applied.")
             else { for ((op, off) in planned) applyOne(p, off, op.new, auto); out.add("Applied ${planned.size} patch(es)."); setStatus("${p.journal.size} change(s) this session") }
-            show(batchResult, out.joinToString("\n")); log("Batch: ${out.last()}")
+            show(batchResult, out.joinToString("\n")); log("Batch: ${out.last()}"); if (!dry) showPatchedWithUndo(planned.size)
         }
     }
     private fun doFind() {
