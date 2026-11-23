@@ -469,37 +469,51 @@ class MainActivity : AppCompatActivity() {
     private fun isNightNow(): Boolean =
         (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     private fun header(): View {
-        // EXACT mockup header: circular gradient logo + huge Il2Patch + grey subtitle.
-        // No status pill here — mockup has none. statusText is kept invisible so setStatus() still works.
+        // MORPHE style: big plain title at top-left, NO logo+title row.
+        // "Il" in blue-teal like Morphe's "M", rest white/dark. Subtitle small grey below.
+        // Top-right: 2 circular icon buttons (Search -> Find, Gear -> Settings) like Morphe.
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(8))
+            setPadding(dp(20), dp(16), dp(20), dp(8))
             setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
-        val logo = ImageView(this).apply {
-            setImageResource(R.drawable.ic_launcher_foreground)
-            // Circular gradient: deep indigo-purple -> teal, like the mockup icon
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF5B2EE5.toInt(), 0xFF00C2A8.toInt())).apply { cornerRadius = dp(34).toFloat() }
-            scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
+        // Title: "Il" coloured + "2Patch" plain — built from 2 TextViews so the gradient colour is exact
+        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val ilPart = tv("Il", MR.style.TextAppearance_Material3_TitleLarge).apply {
+            typeface = fontTitle(); textSize = 34f; letterSpacing = -0.02f
+            setTextColor(0xFF2E9BE6.toInt()) // Morphe blue
         }
-        row.addView(logo, LinearLayout.LayoutParams(dp(68), dp(68)))
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(8), 0) }
-        // Title: 36sp extra-bold, dark indigo in light (#1E1B4B), white in dark — exactly mockup
-        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply {
-            typeface = fontTitle(); textSize = 36f; letterSpacing = -0.02f
+        val restPart = tv("2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply {
+            typeface = fontTitle(); textSize = 34f; letterSpacing = -0.02f
             setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF1E1B4B.toInt())
-        })
-        col.addView(hint("Patch your own Unity games", cOnVariant()).apply { textSize = 14f })
+        }
+        titleRow.addView(ilPart); titleRow.addView(restPart)
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(titleRow)
+        col.addView(hint("Patch your own Unity games", cOnVariant()).apply { textSize = 13f; setPadding(0, dp(2), 0, 0) })
         row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        // Circular top-right buttons — Morphe: dark grey circle, white icon
+        fun circleBtn(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
+            this.text = text; textSize = 18f; gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(if (isNightNow()) 0xFF2A2A33.toInt() else 0xFFE8E0FF.toInt())
+                cornerRadius = dp(24).toFloat()
+            }
+            setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF1E1B4B.toInt())
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setOnClickListener { onClick() }
+        }
+        row.addView(circleBtn("🔍") { go(1) }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(8) })
+        row.addView(circleBtn("⚙") { go(3) }, LinearLayout.LayoutParams(dp(48), dp(48)))
         outer.addView(row)
-        // Invisible status holder — setStatus() writes here, hero/status pill does not show it
         statusText = hint(st.status, cOnSurface()).apply { visibility = View.GONE }
         outer.addView(statusText)
         return outer
     }
+
 
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
@@ -528,10 +542,23 @@ class MainActivity : AppCompatActivity() {
         nav = BottomNavigationView(this).apply {
             inflateMenu(R.menu.nav)
             labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
-            background = pillDrawable(cNavBg(), 32)
-            // Force modern nav colors in code — old themes.xml would tint this grey/purple
-            itemIconTintList = android.content.res.ColorStateList.valueOf(0xFF4A44D6.toInt())
-            itemTextColor = android.content.res.ColorStateList.valueOf(if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF121216.toInt())
+            // MORPHE bottom bar: floating dark translucent pill, selected tab gets
+            // a light-lavender pill behind its icon+label, unselected = grey.
+            background = pillDrawable(if (isNightNow()) 0xE62A2A33.toInt() else 0xF2FFFFFF.toInt(), 32)
+            // Selected pill (Material3 active indicator) — exactly Morphe's light lavender
+            itemActiveIndicatorColor = android.content.res.ColorStateList.valueOf(0xFFB8B5D6.toInt())
+            val sel = if (isNightNow()) 0xFF121216.toInt() else 0xFF121216.toInt()
+            val unsel = if (isNightNow()) 0xFF9A93A8.toInt() else 0xFF6B6B7A.toInt()
+            itemIconTintList = android.content.res.ColorStateList(
+                arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                intArrayOf(sel, unsel)
+            )
+            itemTextColor = android.content.res.ColorStateList(
+                arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                intArrayOf(sel, unsel)
+            )
+            itemTextAppearanceActive = R.style.TextAppearance_Material3_LabelMedium
+            itemTextAppearanceInactive = R.style.TextAppearance_Material3_LabelMedium
             elevation = dp(8).toFloat()
             setOnItemSelectedListener { item ->
                 val i = navIds.indexOf(item.itemId)
@@ -1007,12 +1034,15 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- SETTINGS + LOG ----------
     private fun settingsPage(): ScrollView {
+        // MORPHE Settings: no big gradient explainer card. Small grey section labels
+        // ("General" / "Patching") + grouped rows in ONE outlined card per group.
+        // Row = indigo icon + title + grey subtitle + chevron / switch on right.
         val themeGroup = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         val themeIds = ArrayList<Int>()
         val themeModes = listOf("System" to AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, "Light" to AppCompatDelegate.MODE_NIGHT_NO, "Dark" to AppCompatDelegate.MODE_NIGHT_YES)
-        themeModes.forEach { (t, _) ->
+        themeModes.forEach { (tm, _) ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
+            b.id = View.generateViewId(); b.text = tm; b.isAllCaps = false; b.typeface = fontBodyMedium()
             themeGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
             themeIds.add(b.id)
         }
@@ -1024,36 +1054,108 @@ class MainActivity : AppCompatActivity() {
             val i = themeIds.indexOf(id); if (i < 0) return@addOnButtonCheckedListener
             val mode = themeModes[i].second; prefs.edit().putInt("night", mode).apply(); AppCompatDelegate.setDefaultNightMode(mode); recreate()
         }
-        val theme = card(title("🎨  Appearance"), subtitle("Material You follows your phone's wallpaper colours in Light / Dark. System = follow your phone."), uniformSeg(themeGroup, 8))
-        val defAuto = sw("Write each change straight into the original file", autoSwitch.isChecked)
+        val themeSeg = uniformSeg(themeGroup, 0)
+        themeSeg.visibility = View.GONE
+        var themeExpanded = false
+        fun morpheRow(icon: String, titleText: String, subText: String, trailing: View? = null, onClick: (() -> Unit)? = null): LinearLayout {
+            val iconV = TextView(this).apply {
+                text = icon; textSize = 20f; gravity = Gravity.CENTER
+                setTextColor(0xFF7B78E8.toInt())
+                setPadding(dp(6), dp(6), dp(6), dp(6))
+            }
+            val tV = tv(titleText, MR.style.TextAppearance_Material3_TitleMedium).apply {
+                typeface = fontTitle(); textSize = 19f
+                setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF1E1B4B.toInt())
+            }
+            val sV = tv(subText, MR.style.TextAppearance_Material3_BodySmall).apply {
+                textSize = 13f; setTextColor(if (isNightNow()) 0xFFB0AABF.toInt() else 0xFF5A5A6A.toInt())
+                setPadding(0, dp(2), 0, 0)
+            }
+            val mid = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, dp(8), 0)
+                addView(tV); addView(sV)
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+                addView(iconV, LinearLayout.LayoutParams(dp(40), dp(40)))
+                addView(mid, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                if (trailing != null) addView(trailing, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            }
+            if (onClick != null) row.setOnClickListener { onClick() }
+            return row
+        }
+        fun morpheGroup(vararg rows: View): LinearLayout {
+            // One outlined card, rows stacked with a hairline between them — Morphe Appearance+Notifications
+            val g = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = GradientDrawable().apply {
+                    setColor(if (isNightNow()) 0xFF1A1A22.toInt() else 0xFFFFFFFF.toInt())
+                    cornerRadius = dp(24).toFloat()
+                    setStroke(dp(1), if (isNightNow()) 0xFF3A3A44.toInt() else 0xFFD8D8E0.toInt())
+                }
+                setPadding(0, dp(4), 0, dp(4))
+            }
+            rows.forEachIndexed { idx, r ->
+                g.addView(r)
+                if (idx < rows.size - 1) {
+                    g.addView(View(this).apply {
+                        setBackgroundColor(if (isNightNow()) 0xFF2E2E38.toInt() else 0xFFE8E8EE.toInt())
+                        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(1)).apply { leftMargin = dp(68); rightMargin = dp(16) }
+                    })
+                }
+            }
+            return g
+        }
+        fun sectionLabel(text: String): TextView = tv(text.uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
+            typeface = fontTitle(); letterSpacing = 0.08f; textSize = 13f
+            setTextColor(if (isNightNow()) 0xFF9A93A8.toInt() else 0xFF6B6B7A.toInt())
+            setPadding(dp(20), dp(20), 0, dp(10))
+        }
+        fun chevron(): TextView = TextView(this).apply {
+            text = "›"; textSize = 26f; setTextColor(0xFF7B78E8.toInt()); setPadding(dp(8), 0, 0, 0)
+        }
+        val defAuto = sw("", autoSwitch.isChecked)
         defAuto.setOnCheckedChangeListener { _, on -> autoSwitch.isChecked = on; prefs.edit().putBoolean("def_auto", on).apply() }
-        val defRva = sw("Use RVA (Il2CppDumper addresses) by default", rvaSwitch.isChecked)
+        val defRva = sw("", rvaSwitch.isChecked)
         defRva.setOnCheckedChangeListener { _, on -> rvaSwitch.isChecked = on; prefs.edit().putBoolean("def_rva", on).apply() }
-        val defDry = sw("Dry run by default in the patch list", dryCheck.isChecked)
+        val defDry = sw("", dryCheck.isChecked)
         defDry.setOnCheckedChangeListener { _, on -> dryCheck.isChecked = on; prefs.edit().putBoolean("def_dry", on).apply() }
-        val defaults = card(
-            title("⚙️  Defaults"),
-            subtitle("These are remembered for next time you open the app. Change them here, or on Start / Patch — they stay in sync."),
-            defAuto,
-            hint("Auto-write ON = every patch saves instantly. OFF = patches only live in the app until you tap Save. Beginners: keep ON, use Undo if needed.").top(2),
-            defRva,
-            hint("RVA ON = you paste addresses from Il2CppDumper / Find. OFF = you paste raw file offsets (from a hex editor). Most people want ON.").top(2),
-            defDry,
-            hint("Dry run ON = Patch List only checks, never changes anything. Safest default.").top(2))
-        val storage = card(
-            title("🧹  Storage"),
-            subtitle("Clears the metadata and APK copies this app keeps. Your game saves are NOT touched."),
-            row(btn("Clear cache", 2) { clearCache() }, btn("Clear log", 2) { st.log = ""; if (::logText.isInitialized) logText.text = "" }))
+        // Appearance row expands to show System/Light/Dark (same uniformSeg as Patch tabs)
+        val appearanceRow = morpheRow("🎨", "Appearance", "How Il2Patch looks", chevron()) {
+            themeExpanded = !themeExpanded
+            themeSeg.visibility = if (themeExpanded) View.VISIBLE else View.GONE
+        }
         val verName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
-        val about = card(
-            title("ℹ️  About"),
-            subtitle("Il2Patch $verName\nFor offline, single-player games you own. A repacked APK needs the original app uninstalled first, and in-game saves are usually lost unless you back them up."),
-            hint("Made for learning how Unity / IL2CPP games store values. Use it on your own copy, for your own use."))
-        return page(
-            explainer("⚙️", "Settings — make the app yours",
-                "Theme, defaults, and storage. Nothing here patches a game — it only changes how the app looks and behaves."),
-            theme, defaults, storage, about)
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(16))
+            addView(sectionLabel("General"))
+            addView(morpheGroup(
+                appearanceRow,
+                morpheRow("ℹ️", "About", "Il2Patch $verName • For offline games you own", chevron()) {
+                    toast("Il2Patch $verName — for offline, single-player games you own.")
+                }
+            ))
+            addView(themeSeg)
+            addView(sectionLabel("Patching"))
+            addView(morpheGroup(
+                morpheRow("💾", "Write into original file", "ON = every patch saves instantly", defAuto),
+                morpheRow("🎯", "Use RVA by default", "ON = addresses from Il2CppDumper / Find", defRva),
+                morpheRow("🧪", "Dry run by default", "Patch List only checks, never changes", defDry)
+            ))
+            addView(sectionLabel("Storage"))
+            addView(morpheGroup(
+                morpheRow("🧹", "Clear cache", "Clears metadata + APK copies", chevron()) { clearCache() },
+                morpheRow("📜", "Clear log", "Clears the Log tab", chevron()) { st.log = ""; if (::logText.isInitialized) logText.text = "" }
+            ))
+            addView(hint("Made for learning how Unity / IL2CPP games store values. Use it on your own copy, for your own use.").apply { setPadding(dp(20), dp(16), dp(20), 0) })
+        }
+        val sv = ScrollView(this).apply { addView(col) }
+        return sv
     }
+
+
     private fun clearCache() {
         bg {
             st.dump?.close(); st.dump = null; st.suggestions = emptyList(); st.dumpReport = ""; st.metaFile?.delete(); st.metaFile = null; st.metaName = ""
@@ -1259,7 +1361,7 @@ class MainActivity : AppCompatActivity() {
         val len = (lenField.text.toIntOrNull() ?: 64).coerceIn(1, 4096)
         bg { val b = p.read(off, len); show(patchResult, "file offset 0x%X\n%s".format(off, Hex.dump(b, off))) }
     }
-    private fun     private fun     private fun     private fun doPatch() {
+    private fun doPatch() {
         val p = st.patcher ?: return toast("Open a file first")
         val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
         val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
