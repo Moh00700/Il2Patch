@@ -2,12 +2,32 @@ package com.example.il2patch
 
 import java.io.ByteArrayOutputStream
 
+/**
+ * 🟠 Asm.kt — Tiny assembler + ARM64 scanner
+ * --------------------------------------------------
+ * What this file does, in plain language:
+ *
+ *   🟢 assemble()     — turns text like "mov w0, #1; ret" into real bytes
+ *   🟢 returnValue()  — builds "return true / 10000 / 1.5" code for you
+ *   🟠 flipAddSub()   — turns ONE add -> sub, or sub -> add, in place
+ *   🔎 scanDeep()     — walks a function + the functions it calls, lists every sub
+ *   💬 describeSub()  — turns a raw word into "sub x5, x5, x1" so you can pick the right one
+ *
+ * 🎨 COLOUR CODE (matches MainActivity UI):
+ *   🟢 Green  = safe, return-value patch
+ *   🟠 Orange = Bytes / Flip — advanced, check first
+ *   🔵 Blue   = Batch list
+ *   🟣 Purple = Search by bytes
+ *   🔴 Red    = dangerous / can crash if wrong address
+ */
 class AsmError(msg: String) : Exception(msg)
 
 object Asm {
+    // 🔴 RET — every function ends with this (ARM64). Scanner stops here.
     private const val RET64 = 0xD65F03C0L
     private const val FMOV_S0_W0 = 0x1E270000
 
+    // 🟢 Turn "mov w0, #1; ret" into bytes the game can run
     fun assemble(text: String, is64: Boolean): ByteArray {
         val out = ByteArrayOutputStream()
         val parts = text.split(';', '\n').map { it.trim() }.filter { it.isNotEmpty() }
@@ -68,6 +88,8 @@ object Asm {
         return list
     }
 
+    // 🟢 Build "return <value>" code — used by Patch → Value tab
+    //    bool true/false | int 999 | long 10000 | float 1.5 | double 2.5
     fun returnValue(type: String, text: String, is64: Boolean): ByteArray {
         val t = text.trim()
         if (t.isEmpty()) throw AsmError("enter a value")
@@ -227,6 +249,10 @@ object Asm {
         throw AsmError("unsupported ARM32 instruction '${t[0]}'")
     }
 
+    // 🟠 Flip ONE add <-> sub — the heart of "Increase on spend"
+    //    SpendGems() does: gems = gems - amount  (sub)
+    //    Flip makes it:   gems = gems + amount  (add)  -> spending gives you gems 💸
+    //    Returns null if it's not a recognised add/sub, or if it touches SP (x31) — we never touch SP.
     fun flipAddSub(word: Int): Pair<Int, String>? {
         val rd = word and 0x1F
         val rn = (word ushr 5) and 0x1F
@@ -261,7 +287,8 @@ object Asm {
         return out
     }
 
-    /** Human-readable context: "sub x5, x5, x1" — registers tell you which sub is the resource. */
+    // 💬 Human-readable: "sub x5, x5, x1" — registers tell you WHICH sub is the resource.
+    //    Pick the one that uses the `amount` parameter, NOT the one that says #1 (usually a counter).
     fun describeSub(word: Int): String {
         val rd = word and 0x1F
         val rn = (word ushr 5) and 0x1F
@@ -275,6 +302,11 @@ object Asm {
         }
     }
 
+    // 🔎 Deep Scan — follows branches + calls to find the real sub
+    //    Spend() often looks like: Spend() -> TrySpend() -> set_Resource(get - amount)
+    //    The sub is 2-3 calls deep, not in Spend() itself. This follows up to depth 3.
+    //    If it hits BLR (virtual/interface call) it CANNOT know the target — it reports it
+    //    instead of silently failing, so you know to follow it by hand in Ghidra.
     fun scanDeep(
         read: (Long) -> Int?,
         startOff: Long,
@@ -296,40 +328,45 @@ object Asm {
                 if (!visited.add(off)) break
                 visits++
                 val word = read(off) ?: break
-                if (word == RET64.toInt()) break
+                if (word == RET64.toInt()) break // 🔴 End of this function
                 val top6 = (word ushr 25) and 0x3F
                 val top8 = (word ushr 24) and 0xFF
                 var stop = false
                 when {
+                    // TBZ / TBNZ — "if bit is set, jump" — follow BOTH paths
                     top6 == 0b011011 -> {
                         val b5 = (word ushr 31) and 1
                         var imm14 = (word ushr 5) and 0x3FFF
                         if (imm14 and 0x2000 != 0) imm14 -= 0x4000
                         queue.addLast(Item(off + imm14 * 4L, depth, viaCall))
                     }
+                    // CBZ / CBNZ — "if zero, jump" — follow BOTH paths
                     top6 == 0b011010 -> {
                         var imm19 = (word ushr 5) and 0x7FFFF
                         if (imm19 and 0x40000 != 0) imm19 -= 0x80000
                         queue.addLast(Item(off + imm19 * 4L, depth, viaCall))
                     }
+                    // B.cond — "if condition, jump" — follow BOTH paths
                     top8 == 0x54 && ((word ushr 4) and 1) == 0 -> {
                         var imm19 = (word ushr 5) and 0x7FFFF
                         if (imm19 and 0x40000 != 0) imm19 -= 0x80000
                         queue.addLast(Item(off + imm19 * 4L, depth, viaCall))
                     }
+                    // B — unconditional jump — follow it, STOP this path
                     ((word ushr 26) and 0x3F) == 0b000101 -> {
                         var imm26 = word and 0x3FFFFFF
                         if (imm26 and 0x2000000 != 0) imm26 -= 0x4000000
                         queue.addLast(Item(off + imm26 * 4L, depth, viaCall))
                         stop = true
                     }
+                    // BL — direct call — follow it (depth + 1), AND keep going here (it returns)
                     ((word ushr 26) and 0x3F) == 0b100101 -> {
                         var imm26 = word and 0x3FFFFFF
                         if (imm26 and 0x2000000 != 0) imm26 -= 0x4000000
                         if (depth < maxCallDepth) queue.addLast(Item(off + imm26 * 4L, depth + 1, true))
                     }
                     // BLR Xn — indirect / virtual call, target cannot be resolved from bytes alone.
-                    // FIXED: bits 15:10 are 000000 in real BR/BLR/RET, never 111111.
+                    // ✅ FIXED (Claude catch): bits 15:10 are 000000 in real BR/BLR/RET, never 111111.
                     // Bit 21 = 1 distinguishes BLR from BR, bits 20:16 = 11111 is the shared op2 field.
                     ((word ushr 22) and 0x3FF) == 0b1101011000 &&
                     ((word ushr 21) and 1) == 1 &&
@@ -338,6 +375,7 @@ object Asm {
                     ((word ushr 5) and 0x1F) != 31 -> {
                         out.add(Triple(off, "indirect-call (BLR, cannot follow)", viaCall))
                     }
+                    // Anything else — is it a sub we can flip?
                     else -> {
                         val flip = flipAddSub(word)
                         if (flip != null && flip.second.startsWith("sub")) out.add(Triple(off, flip.second, viaCall))
