@@ -158,14 +158,14 @@ class MainActivity : AppCompatActivity() {
         typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(4)); textSize = 20f
     }
     private fun subtitle(t: String) = tv(t, MR.style.TextAppearance_Material3_BodyMedium).apply {
-        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); lineSpacing(1.15f, 1.15f)
+        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); setLineSpacing(0f, 1.15f)
     }
     // Section header: coloured by location, e.g. "💎  1  FILES" in Find, "✏️  VALUE" in Patch
     private fun label(t: String, color: Int = cPrimary()) = tv(t.uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
         typeface = fontTitle(); letterSpacing = 0.12f; setTextColor(color.toInt()); setPadding(dp(4), dp(16), 0, dp(6)); textSize = 13f
     }
     private fun hint(t: String, color: Int = cOnVariant()) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
-        typeface = fontBody(); setTextColor(color.toInt()); lineSpacing(1.2f, 1.2f)
+        typeface = fontBody(); setTextColor(color.toInt()); setLineSpacing(0f, 1.2f)
     }
     private fun hintSuccess(t: String) = hint(t, cSuccess())
     private fun hintWarn(t: String) = hint(t, cWarning())
@@ -177,7 +177,7 @@ class MainActivity : AppCompatActivity() {
             typeface = fontTitle(); setTextColor(fg.toInt())
         }
         val b = tv(body, MR.style.TextAppearance_Material3_BodyMedium).apply {
-            typeface = fontBody(); setTextColor(fg.toInt()); setPadding(0, dp(4), 0, 0); lineSpacing(1.2f, 1.2f)
+            typeface = fontBody(); setTextColor(fg.toInt()); setPadding(0, dp(4), 0, 0); setLineSpacing(0f, 1.2f)
         }
         val c = card(t, b)
         c.setCardBackgroundColor(bg)
