@@ -129,13 +129,17 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- Material You helpers ----------
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    private fun cPrimary(): Int = MaterialColors.getColor(this, MR.attr.colorPrimary, 0xFF4A44D6.toInt())
-    private fun cOnPrimaryContainer(): Int = MaterialColors.getColor(this, MR.attr.colorOnPrimaryContainer, 0xFF1A1A1A.toInt())
-    private fun cPrimaryContainer(): Int = MaterialColors.getColor(this, MR.attr.colorPrimaryContainer, 0xFFE8E0FF.toInt())
-    private fun cSurfaceVariant(): Int = MaterialColors.getColor(this, MR.attr.colorSurfaceVariant, 0xFFF0F0F0.toInt())
-    private fun cOnSurface(): Int = MaterialColors.getColor(this, MR.attr.colorOnSurface, 0xFF1A1A1A.toInt())
-    private fun cOnVariant(): Int = MaterialColors.getColor(this, MR.attr.colorOnSurfaceVariant, 0xFF555555.toInt())
-    private fun cError(): Int = MaterialColors.getColor(this, MR.attr.colorError, 0xFFB3261E.toInt())
+    // MODERN COLORS — hardcoded, NOT from themes.xml.
+    // Why: themes.xml in your repo still has the OLD purple/grey. If we read from
+    // MaterialColors.getColor(), the old theme wins and the app still looks old.
+    // These match Obtainium (light) / Morphe (dark) from your screenshots.
+    private fun cPrimary(): Int = if (isNightNow()) 0xFFB8B2FF.toInt() else 0xFF4A44D6.toInt()
+    private fun cOnPrimaryContainer(): Int = if (isNightNow()) 0xFFE8E0FF.toInt() else 0xFF1A1A1A.toInt()
+    private fun cPrimaryContainer(): Int = if (isNightNow()) 0xFF3B2FC9.toInt() else 0xFFE8E0FF.toInt()
+    private fun cSurfaceVariant(): Int = if (isNightNow()) 0xFF2A2A33.toInt() else 0xFFF2F0FA.toInt()
+    private fun cOnSurface(): Int = if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF121216.toInt()
+    private fun cOnVariant(): Int = if (isNightNow()) 0xFFCAC4D0.toInt() else 0xFF5A5A6A.toInt()
+    private fun cError(): Int = if (isNightNow()) 0xFFF2B8B5.toInt() else 0xFFB3261E.toInt()
     private fun cSuccess(): Int = 0xFF1E8E5A.toInt()
     private fun cWarning(): Int = 0xFFB26A00.toInt()
     // ---- Modern design system (Obtainium / Morphe style) ----
@@ -277,6 +281,7 @@ class MainActivity : AppCompatActivity() {
         typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cSuccess().toInt())
     }
     private fun page(vararg views: View) = ScrollView(this).apply {
+        setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
         val col = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(32))
         }
@@ -399,7 +404,11 @@ class MainActivity : AppCompatActivity() {
         return outer
     }
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            // Force modern bg — do NOT rely on themes.xml windowBackground
+            setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
+        }
         root.addView(header())
         progress = LinearProgressIndicator(this).apply { isIndeterminate = true; visibility = View.INVISIBLE }
         root.addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -422,6 +431,9 @@ class MainActivity : AppCompatActivity() {
             inflateMenu(R.menu.nav)
             labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
             background = pillDrawable(cNavBg(), 32)
+            // Force modern nav colors in code — old themes.xml would tint this grey/purple
+            itemIconTintList = android.content.res.ColorStateList.valueOf(0xFF4A44D6.toInt())
+            itemTextColor = android.content.res.ColorStateList.valueOf(if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF121216.toInt())
             elevation = dp(8).toFloat()
             setOnItemSelectedListener { item ->
                 val i = navIds.indexOf(item.itemId)
