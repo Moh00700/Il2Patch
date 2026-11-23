@@ -329,7 +329,13 @@ object Asm {
                         if (depth < maxCallDepth) queue.addLast(Item(off + imm26 * 4L, depth + 1, true))
                     }
                     // BLR Xn — indirect / virtual call, target cannot be resolved from bytes alone.
-                    ((word ushr 22) and 0x3FF) == 0b1101011000 && ((word ushr 10) and 0x3F) == 0b111111 && ((word ushr 5) and 0x1F) != 31 -> {
+                    // FIXED: bits 15:10 are 000000 in real BR/BLR/RET, never 111111.
+                    // Bit 21 = 1 distinguishes BLR from BR, bits 20:16 = 11111 is the shared op2 field.
+                    ((word ushr 22) and 0x3FF) == 0b1101011000 &&
+                    ((word ushr 21) and 1) == 1 &&
+                    ((word ushr 16) and 0x1F) == 0b11111 &&
+                    ((word ushr 10) and 0x3F) == 0b000000 &&
+                    ((word ushr 5) and 0x1F) != 31 -> {
                         out.add(Triple(off, "indirect-call (BLR, cannot follow)", viaCall))
                     }
                     else -> {
