@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Il2Patch — Full Backup Rules (Android 11 and below)
+     Used by AndroidManifest.xml -> android:fullBackupContent="@xml/backup_rules"
+     Same idea as data_extraction_rules: back up settings only,
+     never the big game / patched files. -->
+<full-backup-content xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Back up: SharedPreferences (Settings tab) -->
+    <include domain="sharedpref" path="." />
+    <include domain="database" path="." />
+
+    <!-- Never back up: -->
+    <!-- work.bin — the file being patched -->
+    <exclude domain="file" path="work.bin" />
+    <!-- patched .so / APK outputs -->
+    <exclude domain="file" path="patched" />
+    <exclude domain="file" path="patched.apk" />
+    <exclude domain="file" path="libil2cpp_patched.so" />
+    <!-- cache + logs -->
+    <exclude domain="file" path="cache" />
+    <exclude domain="file" path="logs" />
+    <exclude domain="external" path="." />
+
+</full-backup-content>
