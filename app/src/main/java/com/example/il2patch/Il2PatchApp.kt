@@ -112,8 +112,9 @@ class Il2PatchApp : Application() {
             // Old work.bin from a crashed session — MainActivity will
             // re-create it when the user opens a file again.
             // We do NOT delete the user's open file, only our temp copy.
+            // App just launched, so nothing is open yet — any stale work.bin is safe to delete.
             val staleWork = File(cacheDir, "work.bin")
-            if (staleWork.exists() && state.openFile == null) {
+            if (staleWork.exists()) {
                 staleWork.delete()
             }
             // Old metadata copies older than 7 days
