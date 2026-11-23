@@ -297,6 +297,61 @@ class MainActivity : AppCompatActivity() {
         c.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
         return c
     }
+    // ---- Morphe-style row: horizontal, icon circle + title + 1 subtitle + pill action ----
+    // This is what makes Morphe look like Morphe: NO big card with a paragraph + button inside.
+    // Each row is ONE line of action. Tap row = do it.
+    private fun morpheRow(icon: String, titleText: String, subtitleText: String, actionText: String, gradStart: Int, gradEnd: Int, onClick: () -> Unit): MaterialCardView {
+        val iconView = TextView(this).apply {
+            text = icon; textSize = 24f; gravity = Gravity.CENTER
+            background = GradientDrawable().apply { setColor((gradStart and 0x00FFFFFF) or 0xFF000000); cornerRadius = dp(16).toFloat() }
+            // icon circle: solid tinted bg
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+        }
+        // Rebuild icon bg as tinted circle using gradStart at low alpha on card bg
+        iconView.background = GradientDrawable().apply {
+            setColor(if (isNightNow()) (gradStart and 0x00FFFFFF) or 0x33000000 else (gradStart and 0x00FFFFFF) or 0x22000000)
+            cornerRadius = dp(16).toFloat()
+        }
+        val titleV = tv(cleanText(titleText), MR.style.TextAppearance_Material3_TitleMedium).apply {
+            typeface = fontTitle(); setTextColor(cOnSurface().toInt()); textSize = 18f
+        }
+        val subV = tv(subtitleText, MR.style.TextAppearance_Material3_BodySmall).apply {
+            setTextColor(cOnVariant().toInt()); textSize = 13f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+        }
+        val mid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(titleV); addView(subV)
+            setPadding(dp(12), 0, dp(8), 0)
+        }
+        val action = MaterialButton(this).apply {
+            text = actionText; isAllCaps = false; typeface = fontBodyMedium()
+            cornerRadius = dp(20); minimumHeight = dp(40)
+            setPadding(dp(16), 0, dp(16), 0)
+            setOnClickListener { onClick() }
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(iconView, LinearLayout.LayoutParams(dp(52), dp(52)))
+            addView(mid, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+        }
+        val c = MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle)
+        c.addView(row.apply { setPadding(dp(16), dp(16), dp(16), dp(16)) })
+        c.radius = dp(24).toFloat()
+        // Morphe dark: subtle gradient per row. Light: pastel card.
+        if (isNightNow()) {
+            c.background = gradDrawable(gradStart, gradEnd, 24)
+            c.setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+            titleV.setTextColor(0xFFFFFFFF.toInt()); subV.setTextColor(0xFFFFFFFF.toInt()); subV.alpha = 0.85f
+        } else {
+            c.setCardBackgroundColor(cCardBg())
+        }
+        c.cardElevation = dp(2).toFloat(); c.strokeWidth = 0
+        c.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
+        c.setOnClickListener { onClick() }
+        return c
+    }
+
     private fun sw(text: String, checked: Boolean) = MaterialSwitch(this).apply { this.text = text; isChecked = checked; typeface = fontBody() }.top(4)
     private fun resultText() = tv("Nothing yet.", MR.style.TextAppearance_Material3_BodySmall).apply {
         typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
@@ -384,10 +439,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         prefs = getSharedPreferences("ui", MODE_PRIVATE)
+        // THEME FIX: ONE source only — prefs "ui" key "night" (int). Do NOT call
+        // Il2PatchTheme.applySavedTheme() here: it reads a different prefs file
+        // (il2patch_settings / "theme") and overwrites this mode back to system.
         AppCompatDelegate.setDefaultNightMode(prefs.getInt("night", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
         super.onCreate(savedInstanceState)
-        // MERGED: Apply saved Material You theme BEFORE building UI (no white flash)
-        Il2PatchTheme.applySavedTheme(this)
         work = File(filesDir, "work.bin")
         setContentView(buildUi())
         restore(savedInstanceState)
@@ -395,38 +451,38 @@ class MainActivity : AppCompatActivity() {
     private fun isNightNow(): Boolean =
         (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     private fun header(): View {
-        // Modern top bar: transparent bg, logo in gradient squircle, big title.
-        // Status sits in a soft pill below — like Obtainium's search pill.
+        // EXACT mockup header: circular gradient logo + huge Il2Patch + grey subtitle.
+        // No status pill here — mockup has none. statusText is kept invisible so setStatus() still works.
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(4))
+            setPadding(dp(20), dp(20), dp(20), dp(8))
+            setBackgroundColor(if (isNightNow()) 0xFF121216.toInt() else 0xFFFFFFFF.toInt())
         }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         }
         val logo = ImageView(this).apply {
             setImageResource(R.drawable.ic_launcher_foreground)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF4A44D6.toInt(), 0xFF00C2A8.toInt())).apply { cornerRadius = dp(18).toFloat() }
+            // Circular gradient: deep indigo-purple -> teal, like the mockup icon
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF5B2EE5.toInt(), 0xFF00C2A8.toInt())).apply { cornerRadius = dp(34).toFloat() }
             scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
         }
-        row.addView(logo, LinearLayout.LayoutParams(dp(52), dp(52)))
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0) }
-        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnSurface().toInt()); textSize = 28f; letterSpacing = -0.01f })
-        col.addView(hint("Patch your own Unity games", cOnVariant()).apply { textSize = 13f })
+        row.addView(logo, LinearLayout.LayoutParams(dp(68), dp(68)))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(8), 0) }
+        // Title: 36sp extra-bold, dark indigo in light (#1E1B4B), white in dark — exactly mockup
+        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply {
+            typeface = fontTitle(); textSize = 36f; letterSpacing = -0.02f
+            setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF1E1B4B.toInt())
+        })
+        col.addView(hint("Patch your own Unity games", cOnVariant()).apply { textSize = 14f })
         row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         outer.addView(row)
-        // Status pill
-        val pill = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            background = pillDrawable(cCardBg(), 28)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-        }
-        statusText = hint(st.status, cOnSurface()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; textSize = 14f }
-        pill.addView(tv("●  ", MR.style.TextAppearance_Material3_BodyMedium).apply { setTextColor(cSuccess().toInt()) })
-        pill.addView(statusText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        outer.addView(pill, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(14) })
+        // Invisible status holder — setStatus() writes here, hero/status pill does not show it
+        statusText = hint(st.status, cOnSurface()).apply { visibility = View.GONE }
+        outer.addView(statusText)
         return outer
     }
+
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -502,28 +558,119 @@ class MainActivity : AppCompatActivity() {
         hintText = tv("", MR.style.TextAppearance_Material3_BodyLarge).apply {
             typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer().toInt())
         }
-        val hero = explainer("🚀", "Patch a game in 3 steps",
-            "Open your file • Find the function • Patch & Save. No PC needed — everything runs on your phone.")
-        infoText = hint("No file open.", cOnVariant()).apply { setPadding(0, dp(12), 0, 0) }
-        val src = card(
-            title("📂  1 — Open your file"),
-            subtitle("Pick libil2cpp.so, any ELF .so, or an APK."),
-            btn("Open .so or .apk") { pickFile() }.top(12), infoText)
-        val save = card(
-            title("💾  Save"),
-            subtitle("Green = safe. Save to original overwrites the file you opened. Save copy keeps the original untouched — use this first time."),
-            autoSwitch,
-            row(btn("Save to original", 1) { saveOriginal() }, btn("Save copy as...", 1) { saveCopy() }),
-            btn("Build patched APK (APK mode)") { buildApk() }.top(8),
-            hintWarn("⚠️ APK mode: you must uninstall the original app first, then install the patched APK. Saves are usually lost unless you back them up.").top(8))
-        val hist = card(
-            title("↩️  Changes"),
-            subtitle("Every patch is logged. Undo removes the last one. Undo all removes everything this session."),
-            row(btn("Undo last", 2) { undo(false) }, btn("Undo all", 3) { undo(true) }))
-        return page(hero, src, save, hist)
+        // ---- HERO — exactly mockup: gradient card, title, "Import • Configure • Build & Export", 3 pills ----
+        val heroTitle = tv("Patch a game in 3 steps", MR.style.TextAppearance_Material3_TitleLarge).apply {
+            typeface = fontTitle(); setTextColor(0xFFFFFFFF.toInt()); textSize = 26f; letterSpacing = -0.01f
+        }
+        val heroSub = tv("Import • Configure • Build & Export", MR.style.TextAppearance_Material3_BodyMedium).apply {
+            typeface = fontBodyMedium(); setTextColor(0xFFFFFFFF.toInt()); alpha = 0.95f; textSize = 14f
+            setPadding(0, dp(6), 0, dp(12))
+        }
+        fun heroPill(text: String, onClick: () -> Unit): MaterialButton {
+            return MaterialButton(this).apply {
+                this.text = text; isAllCaps = false; typeface = fontBodyMedium(); textSize = 12f
+                cornerRadius = dp(16); minimumHeight = dp(32)
+                // Dark translucent pill on gradient — exactly mockup
+                backgroundTintList = android.content.res.ColorStateList.valueOf(0x55000000.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(dp(10), 0, dp(10), 0)
+                setOnClickListener { onClick() }
+            }
+        }
+        val pills = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(heroPill("⬇  Import") { pickFile() })
+            addView(heroPill("⚙  Configure") { go(1) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
+            addView(heroPill("≡  Build & Export") { buildApk() }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
+        }
+        val heroCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(20))
+            addView(heroTitle); addView(heroSub); addView(pills)
+        }
+        val hero = MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle).apply {
+            addView(heroCol); radius = dp(24).toFloat()
+            background = heroGrad(); setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+            cardElevation = dp(4).toFloat(); strokeWidth = 0
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
+        }
+        infoText = hint("No file open.", cOnVariant()).apply { setPadding(0, dp(4), 0, 0) }
+        // ---- METADATA ROW — exactly mockup: icon square + title + subtitle + gradient Edit pill ----
+        fun mockupRow(icon: String, titleText: String, subtitleText: String, actionText: String, onClick: () -> Unit): MaterialCardView {
+            val iconV = TextView(this).apply {
+                text = icon; textSize = 22f; gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    setColor(if (isNightNow()) 0x33FFFFFF.toInt() else 0xFFDCD6FF.toInt())
+                    cornerRadius = dp(12).toFloat()
+                }
+                setPadding(dp(10), dp(10), dp(10), dp(10))
+            }
+            val tV = tv(titleText, MR.style.TextAppearance_Material3_TitleMedium).apply {
+                typeface = fontTitle(); textSize = 18f
+                setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF1E1B4B.toInt())
+            }
+            val sV = tv(subtitleText, MR.style.TextAppearance_Material3_BodySmall).apply {
+                textSize = 13f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF5A5A6A.toInt())
+                if (isNightNow()) alpha = 0.85f
+            }
+            val mid = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, dp(8), 0)
+                addView(tV); addView(sV)
+            }
+            // Gradient pill button: indigo -> teal, white text — exactly mockup
+            val btn = MaterialButton(this).apply {
+                text = actionText; isAllCaps = false; typeface = fontBodyMedium(); textSize = 14f
+                cornerRadius = dp(14); minimumHeight = dp(40)
+                backgroundTintList = null
+                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF5B2EE5.toInt(), 0xFF00C2A8.toInt())).apply { cornerRadius = dp(14).toFloat() }
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(dp(16), 0, dp(16), 0)
+                setOnClickListener { onClick() }
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+                addView(iconV, LinearLayout.LayoutParams(dp(48), dp(48)))
+                addView(mid, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                addView(btn, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            }
+            return MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle).apply {
+                addView(row); radius = dp(20).toFloat()
+                if (isNightNow()) {
+                    // Dark: subtle blue-teal gradient card like mockup
+                    background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF1E1B4B.toInt(), 0xFF0F3B3A.toInt())).apply { cornerRadius = dp(20).toFloat() }
+                    setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+                } else {
+                    // Light: pastel lavender card like mockup
+                    setCardBackgroundColor(0xFFE8E0FF.toInt())
+                }
+                cardElevation = dp(2).toFloat(); strokeWidth = 0
+                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
+                setOnClickListener { onClick() }
+            }
+        }
+        val metaSub = if (st.metaName.isEmpty()) "App name, version, package ID" else st.metaName
+        val metaRow = mockupRow("🗎", "Metadata", metaSub, "Edit") { pickMeta() }
+        val targetSub = if (st.srcName.isEmpty()) "output/patched_apk" else st.srcName
+        val targetRow = mockupRow("📍", "Target address", targetSub, "Browse") { pickFile() }
+        // Quiet bottom rows: Save / Undo — kept, but small, no big cards (mockup has no room for them)
+        val saveRow = morpheRow("💾", "Save", if (prefs.getBoolean("def_auto", true)) "Direct mode — writes into original" else "Save copy — original untouched", "Save", 0xFF1E8E5A.toInt(), 0xFF0D9488.toInt()) {
+            if (prefs.getBoolean("def_auto", true)) saveOriginal() else saveCopy()
+        }
+        val undoRow = morpheRow("↩️", "Undo last change", "Removes the last patch", "Undo", 0xFFB3261E.toInt(), 0xFF0D9488.toInt()) { undo(false) }
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), 0)
+            addView(infoText)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(8), 0, 0)
+                addView(autoSwitch, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            })
+        }
+        return page(hero, metaRow, targetRow, saveRow, undoRow, statusRow)
     }
 
-    // ---------- FIND TAB ----------
     private fun findPage(): ScrollView {
         metaText = hint(if (st.metaName.isEmpty()) "APK: found automatically. For a plain .so, pick global-metadata.dat." else "Metadata: ${st.metaName}")
         includeAllSwitch = sw("Include 【entity-Unity¦canonical_name=Unity】 / System assemblies (bigger, slower)", false)
@@ -875,7 +1022,7 @@ class MainActivity : AppCompatActivity() {
         themeGroup.addOnButtonCheckedListener { _, id, checked ->
             if (!checked) return@addOnButtonCheckedListener
             val i = themeIds.indexOf(id); if (i < 0) return@addOnButtonCheckedListener
-            val mode = themeModes[i].second; prefs.edit().putInt("night", mode).apply(); AppCompatDelegate.setDefaultNightMode(mode)
+            val mode = themeModes[i].second; prefs.edit().putInt("night", mode).apply(); AppCompatDelegate.setDefaultNightMode(mode); recreate()
         }
         val theme = card(title("🎨  Appearance"), subtitle("Material You follows your phone's wallpaper colours in Light / Dark. System = follow your phone."), segRow(themeGroup, 8))
         val defAuto = sw("Write each change straight into the original file", autoSwitch.isChecked)
