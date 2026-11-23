@@ -109,8 +109,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filterField: Field
     private lateinit var sugList: LinearLayout
     private lateinit var emptyText: TextView
-    private lateinit var spendList: LinearLayout
-    private lateinit var spendEmptyText: TextView
     private lateinit var moreBtn: MaterialButton
     private var sugLimit = 30
 
@@ -278,6 +276,26 @@ class MainActivity : AppCompatActivity() {
         addView(main, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         addView(side, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
     }
+    private fun uniformSeg(group: MaterialButtonToggleGroup, topMargin: Int = 4): View {
+        group.orientation = LinearLayout.HORIZONTAL
+        group.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { this.topMargin = dp(topMargin) }
+        for (i in 0 until group.childCount) {
+            val b = group.getChildAt(i)
+            b.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { if (i > 0) marginStart = dp(4) }
+            if (b is MaterialButton) { b.cornerRadius = dp(24); b.textSize = 13f; b.isAllCaps = false }
+        }
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = pillDrawable(if (isNightNow()) 0xFF2A2A33.toInt() else 0xFFE8E0FF.toInt(), 28)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            addView(group)
+        }
+        return wrap
+    }
+    private fun isUiClass(s: Suggestion): Boolean =
+        s.cls.contains("Btn", ignoreCase = true) || s.cls.contains("View", ignoreCase = true)
+    private val selectedCats = mutableSetOf<String>()
+    private val chipButtons = mutableListOf<MaterialButton>()
     private fun segRow(group: MaterialButtonToggleGroup, topMargin: Int = 4): View =
         HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -562,13 +580,13 @@ class MainActivity : AppCompatActivity() {
         val heroTitle = tv("Patch a game in 3 steps", MR.style.TextAppearance_Material3_TitleLarge).apply {
             typeface = fontTitle(); setTextColor(0xFFFFFFFF.toInt()); textSize = 26f; letterSpacing = -0.01f
         }
-        val heroSub = tv("Import • Configure • Build & Export", MR.style.TextAppearance_Material3_BodyMedium).apply {
+        val heroSub = tv("Import libil2cpp.so • Configure • Build & Export", MR.style.TextAppearance_Material3_BodyMedium).apply {
             typeface = fontBodyMedium(); setTextColor(0xFFFFFFFF.toInt()); alpha = 0.95f; textSize = 14f
             setPadding(0, dp(6), 0, dp(12))
         }
         fun heroPill(text: String, onClick: () -> Unit): MaterialButton {
             return MaterialButton(this).apply {
-                this.text = text; isAllCaps = false; typeface = fontBodyMedium(); textSize = 12f
+                this.text = text; isAllCaps = false; typeface = fontBodyMedium(); textSize = 11f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END
                 cornerRadius = dp(16); minimumHeight = dp(32)
                 // Dark translucent pill on gradient — exactly mockup
                 backgroundTintList = android.content.res.ColorStateList.valueOf(0x55000000.toInt())
@@ -579,9 +597,9 @@ class MainActivity : AppCompatActivity() {
         }
         val pills = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(heroPill("⬇  Import") { pickFile() })
-            addView(heroPill("⚙  Configure") { go(1) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
-            addView(heroPill("≡  Build & Export") { buildApk() }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
+            addView(heroPill("⬇  Import libil2cpp.so") { pickFile() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(heroPill("⚙  Configure") { go(1) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
+            addView(heroPill("≡  Build & Export") { buildApk() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
         }
         val heroCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(20))
@@ -663,9 +681,9 @@ class MainActivity : AppCompatActivity() {
             addView(infoText)
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(8), 0, 0)
-                addView(autoSwitch, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+                setPadding(0, dp(16), 0, 0)
+                addView(autoSwitch, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(16) })
+                addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(16) })
             })
         }
         return page(hero, metaRow, targetRow, saveRow, undoRow, statusRow)
@@ -690,20 +708,36 @@ class MainActivity : AppCompatActivity() {
             subtitle("Reads every class and method and picks the ones that likely control gems / coins, ads, premium, stats, weapons, movement, enemies, map, saves, shop, daily rewards, settings, vehicles or bars. Names are hints — always test in-game."),
             btn("Analyze") { doAnalyze() }.top(12), sumText.top(12),
             btn("Show technical details", 2) { toggle(dumpSummary) }.top(8), dumpSummary.top(8))
-        catGroup = MaterialButtonToggleGroup(this)
-        cats.forEach { c ->
+        // Wrapping category chips: 3 per row, NO horizontal scroll — all categories visible
+        selectedCats.clear(); chipButtons.clear()
+        val chipFlow = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var curRow: LinearLayout? = null
+        cats.forEachIndexed { idx, c ->
+            if (idx % 3 == 0) {
+                curRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                chipFlow.addView(curRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { if (idx > 0) topMargin = dp(8) })
+            }
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = c; b.isAllCaps = false; b.isCheckable = true; b.typeface = fontBodyMedium()
-            catGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
-            catIds.add(b.id)
+            b.id = View.generateViewId(); b.text = c; b.isAllCaps = false; b.isCheckable = true; b.isChecked = true
+            b.typeface = fontBodyMedium(); b.cornerRadius = dp(20); b.textSize = 12f
+            b.setOnClickListener {
+                b.isChecked = !b.isChecked
+                if (b.isChecked) selectedCats.add(c) else selectedCats.remove(c)
+                // Same colour/style for all chips: indigo when on, outline when off
+                b.backgroundTintList = android.content.res.ColorStateList.valueOf(if (b.isChecked) 0xFF4A44D6.toInt() else 0x00000000.toInt())
+                b.setTextColor(if (b.isChecked) 0xFFFFFFFF.toInt() else if (isNightNow()) 0xFFE6E0E9.toInt() else 0xFF121216.toInt())
+                sugLimit = 30; renderSuggestions()
+            }
+            selectedCats.add(c)
+            b.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF4A44D6.toInt())
+            b.setTextColor(0xFFFFFFFF.toInt())
+            chipButtons.add(b); catIds.add(b.id)
+            curRow?.addView(b, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { if (idx % 3 > 0) marginStart = dp(8) })
         }
-        catIds.forEach { catGroup.check(it) }
         filterField = Field("Search by name (optional)", 1, false,
-            "🔎 Type part of a name, e.g. gem, spend, ad, health. Leave empty to see everything.")
+            "🔎 Type part of a name, e.g. gem, coins, ad, health. Leave empty to see everything.")
         sugList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         emptyText = hint("Run Analyze to see suggestions.").apply { setPadding(dp(4), dp(8), 0, dp(8)) }
-        spendList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        spendEmptyText = hint("No Spend / drain functions found.").apply { setPadding(dp(4), dp(8), 0, dp(8)) }
         moreBtn = btn("Show more", 2) { sugLimit += 30; renderSuggestions() }
         moreBtn.visibility = View.GONE
         val exp = card(
@@ -717,16 +751,11 @@ class MainActivity : AppCompatActivity() {
             label("🔍  2  SCAN", cSuccess()), run,
             label("✅  3  FIX", cSuccess()),
             subtitle("Tap a category chip to filter. Un-tap it to hide that whole category."),
-            segRow(catGroup), filterField.asView(),
+            chipFlow, filterField.asView(),
             emptyText, sugList.top(0), moreBtn.top(4),
             btn("Add shown to Batch list", 2) { sendToBatch() }.top(8),
-            label("💸  INCREASE ON SPEND", cWarning()),
-            subtitle("Void Spend / drain functions have NO return value to patch — so they live here, not in the list above."),
-            hint("Tap one → it fills the Patch address, jumps to Bytes, and runs Deep Scan. Spending will then INCREASE the resource instead of decreasing it."),
-            spendEmptyText, spendList.top(0),
             label("📤  EXPORT", cPrimary()), exp
         )
-        catGroup.addOnButtonCheckedListener { _, _, _ -> sugLimit = 30; renderSuggestions() }
         filterField.edit.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { sugLimit = 30; renderSuggestions() }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -751,7 +780,7 @@ class MainActivity : AppCompatActivity() {
     }
     private fun suggestionCard(s: Suggestion): View {
         val col = catColor(s.category)
-        val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()}", MR.style.TextAppearance_Material3_LabelSmall).apply {
+        val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()}" + if (isUiClass(s)) " • UI" else "", MR.style.TextAppearance_Material3_LabelSmall).apply {
             typeface = fontTitle(); letterSpacing = 0.08f; setTextColor(col.toInt())
             background = GradientDrawable().apply { setColor((col and 0x00FFFFFF) or 0x26000000); cornerRadius = dp(8).toFloat() }
             setPadding(dp(8), dp(2), dp(8), dp(2))
@@ -773,34 +802,6 @@ class MainActivity : AppCompatActivity() {
         val edit = btn("Edit", 2) { applySuggestion(s) }
         return card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), row(ap, edit))
     }
-    private fun spendSuggestions(): List<Suggestion> {
-        val q = filterField.text.trim().lowercase()
-        return st.suggestions.filter {
-            it.kind == "noop" && (q.isEmpty() || (it.cls + "." + it.method).lowercase().contains(q))
-        }
-    }
-    private fun spendCard(s: Suggestion): View {
-        val col = catColor(s.category)
-        val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()} • SPEND", MR.style.TextAppearance_Material3_LabelSmall).apply {
-            typeface = fontTitle(); setTextColor(col.toInt()); setPadding(dp(8), dp(2), dp(8), dp(2))
-        }
-        val name = tv(s.cls + "." + s.method, MR.style.TextAppearance_Material3_TitleSmall).apply {
-            typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()); setPadding(0, dp(8), 0, 0)
-        }
-        val scanBtn = btn("💸  Increase on spend — Deep Scan") {
-            offsetField.text = "%X".format(s.rva); rvaSwitch.isChecked = true
-            goPatch(1); doScanForSub()
-        }
-        return card(pill, name, hint("returns " + s.ret + "   " + s.note).top(2),
-            hint("Tap to scan this function for its subtract instruction.").top(2), scanBtn.top(8))
-    }
-    private fun renderSpend() {
-        if (!::spendList.isInitialized) return
-        spendList.removeAllViews()
-        val list = spendSuggestions()
-        spendEmptyText.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
-        list.take(30).forEach { spendList.addView(spendCard(it)) }
-    }
     private fun renderSuggestions() {
         if (!::sugList.isInitialized) return
         sugList.removeAllViews()
@@ -812,7 +813,7 @@ class MainActivity : AppCompatActivity() {
                 else -> "No matches. Change the filters."
             }
             emptyText.visibility = View.VISIBLE; moreBtn.visibility = View.GONE
-            renderSpend(); return
+            return
         }
         emptyText.visibility = View.GONE
         list.take(sugLimit).forEachIndexed { i, s ->
@@ -820,7 +821,6 @@ class MainActivity : AppCompatActivity() {
         }
         if (list.size > sugLimit) { moreBtn.text = "Show more (" + (list.size - sugLimit) + " left)"; moreBtn.visibility = View.VISIBLE }
         else moreBtn.visibility = View.GONE
-        renderSpend()
     }
     private fun pickMeta() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
@@ -864,13 +864,16 @@ class MainActivity : AppCompatActivity() {
     }
     private fun filteredSuggestions(cat: String? = null): List<Suggestion> {
         val sel = HashSet<String>()
-        for (id in catGroup.checkedButtonIds) { val i = catIds.indexOf(id); if (i >= 0) sel.add(cats[i]) }
+        if (chipButtons.isEmpty()) {
+            for (id in catGroup.checkedButtonIds) { val i = catIds.indexOf(id); if (i >= 0) sel.add(cats[i]) }
+        } else sel.addAll(selectedCats)
         val q = filterField.text.trim().lowercase()
+        val sel2 = if (chipButtons.isNotEmpty()) selectedCats else sel
         return st.suggestions.filter {
             it.kind != "noop" &&
-                (if (cat == null) it.category in sel else it.category == cat) &&
+                (if (cat == null) it.category in sel2 else it.category == cat) &&
                 (q.isEmpty() || (it.cls + "." + it.method).lowercase().contains(q))
-        }
+        }.sortedWith(compareBy({ isUiClass(it) }, { it.category }, { it.cls + "." + it.method }))
     }
     private fun quickApply(s: Suggestion, done: () -> Unit) {
         val p = st.patcher ?: return toast("Open a file first")
@@ -942,7 +945,7 @@ class MainActivity : AppCompatActivity() {
                 title("🟢  Make the function return a value"),
                 subtitle("Easiest patch. The function stops running its old code and just returns your value. Best for getters: GetGems, IsPremium, GetHealth."),
                 hint("① Pick the type the function returns (check Find — it says “returns int / bool / float”).  ② Type the value.  ③ Tap Patch function."),
-                segRow(typeGroup, 12), valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
+                uniformSeg(typeGroup, 12), valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
             card(title("📋  Result"), subtitle("Green = patched. If it says “runs past end”, your address is wrong."), returnResult)
         )
         bytesField = Field("New bytes: hex or assembly", 3, true,
@@ -955,10 +958,7 @@ class MainActivity : AppCompatActivity() {
                 subtitle("For when you know exactly what bytes / assembly you want. Advanced — use Value tab if you're unsure."),
                 bytesField.asView(),
                 row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() }),
-                btn("Flip + / − at this address (ARM64)", 2) { doFlipAddSub() }.top(8),
-                hintWarn("↔️ Flip: changes ONE add into sub, or sub into add, at the target address. Use it for Increase-on-Spend.").top(6),
-                btn("Deep scan for subtract (beta, follows branches/calls, ARM64)", 2) { doScanForSub() }.top(8),
-                hint("🔎 Deep Scan: walks the function + functions it calls (depth 3) and lists every sub it finds. Tap one to flip it.").top(6)),
+                hint("Bytes are written exactly as typed. Use Value tab if you are unsure.").top(6)),
             card(title("👀  Read bytes"), subtitle("See what's really at the address before you change it."), lenField.asView(), btn("Read at address", 1) { doRead() }.top(8)),
             card(title("📋  Result"), patchResult)
         )
@@ -1000,7 +1000,7 @@ class MainActivity : AppCompatActivity() {
         val pg = page(
             explainer("✏️", "Patch — change one function",
                 "Everything here edits the function at the 🎯 Target address at the top. Value = easiest, Bytes = full control, List = many at once, Search = find by bytes."),
-            segRow(segGroup, 4), targetCard, *sections.toTypedArray())
+            uniformSeg(segGroup, 4), targetCard, *sections.toTypedArray())
         segGroup.addOnButtonCheckedListener { _, id, checked -> if (checked) showSeg(segIds.indexOf(id)) }
         segGroup.check(segIds[0]); showSeg(0); return pg
     }
@@ -1024,7 +1024,7 @@ class MainActivity : AppCompatActivity() {
             val i = themeIds.indexOf(id); if (i < 0) return@addOnButtonCheckedListener
             val mode = themeModes[i].second; prefs.edit().putInt("night", mode).apply(); AppCompatDelegate.setDefaultNightMode(mode); recreate()
         }
-        val theme = card(title("🎨  Appearance"), subtitle("Material You follows your phone's wallpaper colours in Light / Dark. System = follow your phone."), segRow(themeGroup, 8))
+        val theme = card(title("🎨  Appearance"), subtitle("Material You follows your phone's wallpaper colours in Light / Dark. System = follow your phone."), uniformSeg(themeGroup, 8))
         val defAuto = sw("Write each change straight into the original file", autoSwitch.isChecked)
         defAuto.setOnCheckedChangeListener { _, on -> autoSwitch.isChecked = on; prefs.edit().putBoolean("def_auto", on).apply() }
         val defRva = sw("Use RVA (Il2CppDumper addresses) by default", rvaSwitch.isChecked)
@@ -1259,85 +1259,7 @@ class MainActivity : AppCompatActivity() {
         val len = (lenField.text.toIntOrNull() ?: 64).coerceIn(1, 4096)
         bg { val b = p.read(off, len); show(patchResult, "file offset 0x%X\n%s".format(off, Hex.dump(b, off))) }
     }
-    private fun flipAt(off: Long) {
-        val p = st.patcher ?: return toast("Open a file first")
-        if (off < 0 || off + 4 > p.size()) return toast("Address is not inside the file")
-        bg {
-            val old = p.read(off, 4)
-            val word = (old[0].toInt() and 0xFF) or ((old[1].toInt() and 0xFF) shl 8) or ((old[2].toInt() and 0xFF) shl 16) or ((old[3].toInt() and 0xFF) shl 24)
-            val flip = Asm.flipAddSub(word)
-            if (flip == null) {
-                show(patchResult, "0x%X: %s\nNot a recognised add/sub instruction (or it touches the stack pointer).".format(off, Hex.fmt(old)))
-                toast("Not a recognised add/sub instruction"); return@bg
-            }
-            val (newWord, desc) = flip
-            val data = byteArrayOf((newWord and 0xFF).toByte(), ((newWord shr 8) and 0xFF).toByte(), ((newWord shr 16) and 0xFF).toByte(), ((newWord ushr 24) and 0xFF).toByte())
-            val auto = autoSwitch.isChecked
-            applyOne(p, off, data, auto)
-            log("0x%X  %s  (was %s, now %s)".format(off, desc, Hex.fmt(old), Hex.fmt(data)))
-            setStatus("${p.journal.size} change(s) this session")
-            show(patchResult, "0x%X: %s\n%s -> %s".format(off, desc, Hex.fmt(old), Hex.fmt(data)))
-            ui {
-                val sb = Snackbar.make(findViewById(android.R.id.content), "Flipped: $desc", Snackbar.LENGTH_LONG)
-                sb.setAnchorView(nav); sb.setAction("Undo") { undo(false) }; sb.show()
-            }
-        }
-    }
-    private fun doFlipAddSub() {
-        if (!is64()) return toast("Flip +/- only recognises ARM64 instructions")
-        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
-        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
-        flipAt(off)
-    }
-    private fun doScanForSub() {
-        val p = st.patcher ?: return toast("Open a file first")
-        if (!is64()) return toast("Scan only recognises ARM64 instructions")
-        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
-        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
-        if (off < 0 || off >= p.size()) return toast("Address is not inside the file")
-        log("Deep scan from RVA/file 0x%X (RVA switch = ${if (rvaSwitch.isChecked) "ON" else "OFF"})".format(v))
-        bg {
-            val size = p.size()
-            val reader: (Long) -> Int? = { o ->
-                if (o < 0 || o + 4 > size) null
-                else {
-                    val b = p.read(o, 4)
-                    (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8) or ((b[2].toInt() and 0xFF) shl 16) or ((b[3].toInt() and 0xFF) shl 24)
-                }
-            }
-            val hits = Asm.scanDeep(reader, off)
-            val indirect = hits.filter { it.second.startsWith("indirect-call") }
-            val subs = hits.filter { !it.second.startsWith("indirect-call") }
-            if (subs.isEmpty()) {
-                val sample = Hex.fmt(p.read(off, minOf(64L, size - off).toInt()))
-                val e = st.elf; val vaddr = e?.toVaddr(off)
-                show(patchResult,
-                    ("No subtract instruction found, even following branches and calls (depth 3).\n" +
-                        "Started at: file 0x%X  RVA 0x%X  (RVA switch = %s)\n" +
-                        "First bytes at 0x%X:\n%s\n\n" +
-                        (if (indirect.isNotEmpty()) "Stopped at ${indirect.size} indirect (virtual/interface) call(s) — target cannot be followed automatically.\n\n" else "") +
-                        "If RVA switch was off, or you pasted a file offset as an RVA (or vice versa), the start address is wrong — re-check it in Find.\n" +
-                        "Otherwise open the .so in a disassembler (e.g. Ghidra), follow the call chain from here by hand, and point the manual \"Flip + / -\" button at the subtract you find.")
-                        .format(off, vaddr ?: -1L, if (rvaSwitch.isChecked) "ON" else "OFF", off, sample))
-                toast("No subtract instruction found nearby"); return@bg
-            }
-            val e2 = st.elf
-            val labels = subs.map { (fOff, desc, viaCall) ->
-                val vaddr = e2?.toVaddr(fOff)
-                val addrTxt = if (vaddr != null) "RVA 0x%X".format(vaddr) else "file 0x%X".format(fOff)
-                val w = reader(fOff) ?: 0
-                val ctx = try { Asm.describeSub(w) } catch (_: Exception) { desc }
-                addrTxt + "  " + ctx + "  [" + desc + "]" + (if (viaCall) "  (in a called function)" else "")
-            }
-            ui {
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("${subs.size} subtract instruction(s) found - tap to flip (increase on spend)")
-                    .setItems(labels.toTypedArray()) { _, i -> flipAt(subs[i].first) }
-                    .setNegativeButton("Cancel", null).show()
-            }
-        }
-    }
-    private fun doPatch() {
+    private fun     private fun     private fun     private fun doPatch() {
         val p = st.patcher ?: return toast("Open a file first")
         val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
         val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
