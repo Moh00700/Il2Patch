@@ -2,6 +2,9 @@
 
 <img src="docs/images/icon.png" width="150" alt="Il2Patch logo">
 
+---
+
+
 Il2Patch
 
 <b>A hex / assembly patcher for <code>libil2cpp.so</code>, built for offline Unity games you own.</b><br>
@@ -301,3 +304,4 @@ app/src/main/java/com/example/il2patch/
 Use this only on **offline, single-player games you own**, to modify **your own copy**, for **your own use**.
 Do not use it to cheat in online / multiplayer games, to bypass payments in a way that harms developers, or to redistribute patched APKs.
 The authors are not responsible for bans, lost saves, or broken games. **Back up before patching.**
+</div>
