@@ -1,27 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#3B2FC9</color>
-
-    <color name="md_primary">#4A44D6</color>
-    <color name="md_on_primary">#FFFFFF</color>
-    <color name="md_primary_container">#E3DFFF</color>
-    <color name="md_on_primary_container">#0C0068</color>
-    <color name="md_secondary">#5D5C72</color>
-    <color name="md_on_secondary">#FFFFFF</color>
-    <color name="md_secondary_container">#E2E0F9</color>
-    <color name="md_on_secondary_container">#1A1A2C</color>
-    <color name="md_background">#FBF8FF</color>
-    <color name="md_on_background">#1B1B21</color>
-    <color name="md_surface">#FBF8FF</color>
-    <color name="md_on_surface">#1B1B21</color>
-    <color name="md_surface_variant">#E4E1EC</color>
-    <color name="md_on_surface_variant">#46464F</color>
-    <color name="md_outline">#777680</color>
-    <color name="md_outline_variant">#C7C5D0</color>
-    <color name="md_surface_container_lowest">#FFFFFF</color>
-    <color name="md_surface_container_low">#F5F2FA</color>
-    <color name="md_surface_container">#EFEDF4</color>
-    <color name="md_surface_container_high">#E9E7EF</color>
-    <color name="md_surface_container_highest">#E4E1E9</color>
-    <color name="md_error">#BA1A1A</color>
+    <!-- Il2Patch modern palette — matches Obtainium light / Morphe dark -->
+    <color name="white">#FFFFFFFF</color>
+    <color name="il2_primary">#FF4A44D6</color>
+    <color name="il2_primary_dark">#FFB8B2FF</color>
+    <color name="il2_primary_container">#FFE8E0FF</color>
+    <color name="il2_primary_container_light">#FFE8E0FF</color>
+    <color name="il2_primary_container_dark">#FF3B2FC9</color>
+    <color name="il2_teal">#FF00C2A8</color>
+    <color name="il2_surface_light">#FFFFFFFF</color>
+    <color name="il2_surface_dark">#FF121216</color>
+    <color name="il2_card_light">#FFF2F0FA</color>
+    <color name="il2_card_dark">#FF2A2A33</color>
+    <color name="il2_nav_dark">#FF2A2A33</color>
+    <color name="il2_on_surface">#FF121216</color>
+    <color name="il2_on_surface_dark">#FFE6E0E9</color>
+    <color name="il2_on_variant_light">#FF5A5A6A</color>
+    <color name="il2_on_variant_dark">#FFCAC4D0</color>
+    <color name="il2_error">#FFB3261E</color>
+    <color name="il2_error_dark">#FFF2B8B5</color>
+    <color name="il2_success">#FF1E8E5A</color>
 </resources>
