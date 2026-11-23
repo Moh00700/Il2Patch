@@ -126,20 +126,56 @@ class MainActivity : AppCompatActivity() {
         "Any arch: return long 10000" to "return long 10000"
     )
 
+    // ---------- Material You helpers ----------
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun cPrimary() = MaterialColors.getColor(this, MR.attr.colorPrimary, 0xFF4A44D6.toInt())
+    private fun cOnPrimaryContainer() = MaterialColors.getColor(this, MR.attr.colorOnPrimaryContainer, 0xFF1A1A1A)
+    private fun cPrimaryContainer() = MaterialColors.getColor(this, MR.attr.colorPrimaryContainer, 0xFFE8E0FF.toInt())
+    private fun cSurfaceVariant() = MaterialColors.getColor(this, MR.attr.colorSurfaceVariant, 0xFFF0F0F0)
+    private fun cOnSurface() = MaterialColors.getColor(this, MR.attr.colorOnSurface, 0xFF1A1A1A)
+    private fun cOnVariant() = MaterialColors.getColor(this, MR.attr.colorOnSurfaceVariant, 0xFF555555)
+    private fun cError() = MaterialColors.getColor(this, MR.attr.colorError, 0xFFB3261E.toInt())
+    private fun cSuccess() = 0xFF1E8E5A.toInt()
+    private fun cWarning() = 0xFFB26A00.toInt()
+
+    private fun fontTitle(): Typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+    private fun fontBody(): Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    private fun fontBodyMedium(): Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private fun fontMono(): Typeface = Typeface.MONOSPACE
+
     private fun tv(text: CharSequence, style: Int = MR.style.TextAppearance_Material3_BodyMedium) =
-        TextView(this).apply { this.text = text; setTextAppearance(style) }
-    private fun primaryColor() = MaterialColors.getColor(this, MR.attr.colorPrimary, 0xFF4A44D6.toInt())
-    private fun title(t: String) = tv(t, MR.style.TextAppearance_Material3_TitleMedium).apply {
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); setPadding(0, 0, 0, dp(6))
+        TextView(this).apply { this.text = text; setTextAppearance(style); typeface = fontBody() }
+
+    private fun title(t: String) = tv(t, MR.style.TextAppearance_Material3_TitleLarge).apply {
+        typeface = fontTitle(); setTextColor(cOnSurface()); setPadding(0, 0, 0, dp(4)); textSize = 20f
     }
-    private fun label(t: String) = tv(t.uppercase(), MR.style.TextAppearance_Material3_LabelSmall).apply {
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); letterSpacing = 0.1f
-        setTextColor(primaryColor()); setPadding(dp(4), dp(8), 0, dp(6))
+    private fun subtitle(t: String) = tv(t, MR.style.TextAppearance_Material3_BodyMedium).apply {
+        typeface = fontBody(); setTextColor(cOnVariant()); setPadding(0, 0, 0, dp(8)); lineSpacing(1.15f, 1.15f)
     }
-    private fun hint(t: String) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
-        setTextColor(MaterialColors.getColor(this@MainActivity, MR.attr.colorOnSurfaceVariant, 0))
+    // Section header: coloured by location, e.g. "💎  1  FILES" in Find, "✏️  VALUE" in Patch
+    private fun label(t: String, color: Int = cPrimary()) = tv(t.uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
+        typeface = fontTitle(); letterSpacing = 0.12f; setTextColor(color); setPadding(dp(4), dp(16), 0, dp(6)); textSize = 13f
     }
+    private fun hint(t: String, color: Int = cOnVariant()) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
+        typeface = fontBody(); setTextColor(color); lineSpacing(1.2f, 1.2f)
+    }
+    private fun hintSuccess(t: String) = hint(t, cSuccess())
+    private fun hintWarn(t: String) = hint(t, cWarning())
+    private fun hintError(t: String) = hint(t, cError())
+
+    // Explainer card at top of each tab — icon + title + plain-language explanation
+    private fun explainer(emoji: String, titleText: String, body: String, bg: Int = cPrimaryContainer(), fg: Int = cOnPrimaryContainer()): MaterialCardView {
+        val t = tv("$emoji  $titleText", MR.style.TextAppearance_Material3_TitleMedium).apply {
+            typeface = fontTitle(); setTextColor(fg)
+        }
+        val b = tv(body, MR.style.TextAppearance_Material3_BodyMedium).apply {
+            typeface = fontBody(); setTextColor(fg); setPadding(0, dp(4), 0, 0); lineSpacing(1.2f, 1.2f)
+        }
+        val c = card(t, b)
+        c.setCardBackgroundColor(bg)
+        return c
+    }
+
     private fun <T : View> T.top(v: Int): T {
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(v) }; return this
     }
@@ -156,10 +192,11 @@ class MainActivity : AppCompatActivity() {
         val b = when (kind) {
             1 -> MaterialButton(ContextThemeWrapper(this, R.style.ThemeOverlay_Il2Patch_Tonal))
             2 -> MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
+            3 -> MaterialButton(this).apply { setTextColor(cError()) } // danger
             else -> MaterialButton(this)
         }
         b.text = text; b.isAllCaps = false
-        b.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        b.typeface = fontBodyMedium(); b.cornerRadius = dp(16)
         b.setOnClickListener { v ->
             v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(70).withEndAction {
                 v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
@@ -192,9 +229,12 @@ class MainActivity : AppCompatActivity() {
         c.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
         return c
     }
-    private fun sw(text: String, checked: Boolean) = MaterialSwitch(this).apply { this.text = text; isChecked = checked }.top(4)
+    private fun sw(text: String, checked: Boolean) = MaterialSwitch(this).apply { this.text = text; isChecked = checked; typeface = fontBody() }.top(4)
     private fun resultText() = tv("Nothing yet.", MR.style.TextAppearance_Material3_BodySmall).apply {
-        typeface = Typeface.MONOSPACE; textSize = 12f; setTextIsSelectable(true)
+        typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cOnVariant())
+    }
+    private fun resultSuccess(t: String) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
+        typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cSuccess())
     }
     private fun page(vararg views: View) = ScrollView(this).apply {
         val col = LinearLayout(context).apply {
@@ -205,12 +245,14 @@ class MainActivity : AppCompatActivity() {
     private fun section(vararg views: View) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; views.forEach { addView(it) }
     }
-    private inner class Field(hint: String, lines: Int = 1, mono: Boolean = false) {
+    // Field with helper text underneath — every field explains itself
+    private inner class Field(hintText: String, lines: Int = 1, mono: Boolean = false, helper: String? = null) {
         val layout = TextInputLayout(this@MainActivity)
         val edit = TextInputEditText(layout.context)
+        val helperView: TextView? = helper?.let { hint(it) }
         init {
-            layout.hint = hint
-            if (mono) edit.typeface = Typeface.MONOSPACE
+            layout.hint = hintText
+            if (mono) edit.typeface = fontMono() else edit.typeface = fontBody()
             if (lines > 1) {
                 edit.minLines = lines; edit.gravity = Gravity.TOP
                 edit.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
@@ -221,6 +263,14 @@ class MainActivity : AppCompatActivity() {
         var text: String
             get() = edit.text?.toString() ?: ""
             set(v) { edit.setText(v) }
+        fun asView(): View {
+            if (helperView == null) return layout
+            val col = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            col.addView(layout)
+            helperView.setPadding(dp(4), dp(2), 0, dp(4))
+            col.addView(helperView)
+            return col
+        }
     }
     private fun toast(msg: String) {
         runOnUiThread {
@@ -257,6 +307,7 @@ class MainActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(18), dp(14), dp(14), dp(10))
+            setBackgroundColor(cPrimaryContainer())
         }
         val logo = ImageView(this).apply {
             setImageResource(R.drawable.ic_launcher_foreground)
@@ -265,8 +316,8 @@ class MainActivity : AppCompatActivity() {
         }
         row.addView(logo, LinearLayout.LayoutParams(dp(46), dp(46)))
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0) }
-        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) })
-        statusText = hint(st.status).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnPrimaryContainer()); textSize = 22f })
+        statusText = hint(st.status, cOnPrimaryContainer()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         col.addView(statusText)
         row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         return row
@@ -276,9 +327,14 @@ class MainActivity : AppCompatActivity() {
         root.addView(header())
         progress = LinearProgressIndicator(this).apply { isIndeterminate = true; visibility = View.INVISIBLE }
         root.addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        offsetField = Field("Function address (hex)", 1, true)
-        rvaSwitch = sw("RVA from Il2CppDumper / Find (turn off for a raw file offset)", prefs.getBoolean("def_rva", true))
-        targetCard = card(offsetField.layout, rvaSwitch)
+        offsetField = Field("Function address (hex)", 1, true,
+            "📌 Example: 1A2B3C — copy it from Find (RVA) or from Ghidra. Do NOT type a file offset here when RVA is ON.")
+        rvaSwitch = sw("RVA from Il2CppDumper / Find  — ON = address from the game, OFF = raw file offset", prefs.getBoolean("def_rva", true))
+        targetCard = card(
+            title("🎯  Target address"),
+            subtitle("This is the function every Patch button below will edit. Fill it from Find, or type it by hand."),
+            offsetField.asView(), rvaSwitch
+        )
         autoSwitch = sw("Write each change straight into the original file", prefs.getBoolean("def_auto", true))
         pages = listOf(startPage(), findPage(), patchPage(), settingsPage(), logPage())
         val frame = FrameLayout(this)
@@ -321,69 +377,87 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---------- START TAB ----------
     private fun startPage(): ScrollView {
         hintText = tv("", MR.style.TextAppearance_Material3_BodyLarge).apply {
-            setTextColor(MaterialColors.getColor(this@MainActivity, MR.attr.colorOnPrimaryContainer, 0))
+            typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer())
         }
-        val hero = card(
-            tv("Patch a game in 3 steps", MR.style.TextAppearance_Material3_HeadlineSmall).apply {
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                setTextColor(MaterialColors.getColor(this@MainActivity, MR.attr.colorOnPrimaryContainer, 0))
-                setPadding(0, 0, 0, dp(8))
-            }, hintText
-        )
-        hero.setCardBackgroundColor(MaterialColors.getColor(this, MR.attr.colorPrimaryContainer, 0))
-        infoText = hint("No file open.").apply { setPadding(0, dp(12), 0, 0) }
-        val src = card(title("1  Open your file"), hint("A libil2cpp.so, any ELF .so, or an APK (then pick the file inside it)."),
+        val hero = explainer("🚀", "Patch a game in 3 steps",
+            "1️⃣ Open your file  •  2️⃣ Find the function in Find  •  3️⃣ Patch it & Save.\nYou never need a PC — everything runs on your phone.")
+        infoText = hint("No file open.", cOnVariant()).apply { setPadding(0, dp(12), 0, 0) }
+        val src = card(
+            title("📂  1 — Open your file"),
+            subtitle("Pick a libil2cpp.so, any ELF .so, or an APK. If you pick an APK, you'll choose which .so inside it to patch."),
             btn("Open .so or .apk") { pickFile() }.top(12), infoText)
-        val save = card(title("Save"), autoSwitch,
+        val save = card(
+            title("💾  Save"),
+            subtitle("Green = safe. Save to original overwrites the file you opened. Save copy keeps the original untouched — use this first time."),
+            autoSwitch,
             row(btn("Save to original", 1) { saveOriginal() }, btn("Save copy as...", 1) { saveCopy() }),
-            btn("Build patched APK (APK mode)") { buildApk() }.top(8))
-        val hist = card(title("Changes"), row(btn("Undo last", 2) { undo(false) }, btn("Undo all", 2) { undo(true) }))
+            btn("Build patched APK (APK mode)") { buildApk() }.top(8),
+            hintWarn("⚠️ APK mode: you must uninstall the original app first, then install the patched APK. Saves are usually lost unless you back them up.").top(8))
+        val hist = card(
+            title("↩️  Changes"),
+            subtitle("Every patch is logged. Undo removes the last one. Undo all removes everything this session."),
+            row(btn("Undo last", 2) { undo(false) }, btn("Undo all", 3) { undo(true) }))
         return page(hero, src, save, hist)
     }
 
+    // ---------- FIND TAB ----------
     private fun findPage(): ScrollView {
         metaText = hint(if (st.metaName.isEmpty()) "APK: found automatically. For a plain .so, pick global-metadata.dat." else "Metadata: ${st.metaName}")
-        includeAllSwitch = sw("Include Unity / System assemblies (bigger, slower)", false)
-        val adv = section(includeAllSwitch).apply { visibility = View.GONE }
-        val files = card(title("Metadata"), metaText, rowAsym(btn("Pick metadata file", 1) { pickMeta() }, btn("Advanced", 2) { toggle(adv) }), adv)
-        sumText = tv(summaryLine(), MR.style.TextAppearance_Material3_BodyLarge)
+        includeAllSwitch = sw("Include 【entity-Unity¦canonical_name=Unity】 / System assemblies (bigger, slower)", false)
+        val adv = section(
+            hint("Normally we skip UnityEngine / System so the list stays clean. Turn this ON only if you are hunting a 【entity-Unity¦canonical_name=Unity】 or System function on purpose.").top(4),
+            includeAllSwitch).apply { visibility = View.GONE }
+        val files = card(
+            title("🗂️  Metadata"),
+            subtitle("global-metadata.dat tells the app the real names of every class & method. Without it, Find can't suggest anything."),
+            metaText, rowAsym(btn("Pick metadata file", 1) { pickMeta() }, btn("Advanced", 2) { toggle(adv) }), adv)
+        sumText = tv(summaryLine(), MR.style.TextAppearance_Material3_BodyLarge).apply { typeface = fontBodyMedium(); setTextColor(cOnSurface()) }
         dumpSummary = hint(if (st.dumpReport.isEmpty()) "" else st.dumpReport).apply {
-            typeface = Typeface.MONOSPACE; textSize = 11f; setTextIsSelectable(true); visibility = View.GONE
+            typeface = fontMono(); textSize = 11f; setTextIsSelectable(true); visibility = View.GONE
         }
-        val run = card(title("Analyze"),
-            hint("Reads every class and method and picks the ones that likely control gems / coins, ads, premium, stats, weapons, movement, enemies, map, saves, shop, daily rewards, settings, vehicles or bars."),
+        val run = card(
+            title("🔍  Analyze"),
+            subtitle("Reads every class and method and picks the ones that likely control gems / coins, ads, premium, stats, weapons, movement, enemies, map, saves, shop, daily rewards, settings, vehicles or bars. Names are hints — always test in-game."),
             btn("Analyze") { doAnalyze() }.top(12), sumText.top(12),
             btn("Show technical details", 2) { toggle(dumpSummary) }.top(8), dumpSummary.top(8))
         catGroup = MaterialButtonToggleGroup(this)
         cats.forEach { c ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = c; b.isAllCaps = false; b.isCheckable = true
+            b.id = View.generateViewId(); b.text = c; b.isAllCaps = false; b.isCheckable = true; b.typeface = fontBodyMedium()
             catGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
             catIds.add(b.id)
         }
         catIds.forEach { catGroup.check(it) }
-        filterField = Field("Search by name (optional)")
+        filterField = Field("Search by name (optional)", 1, false,
+            "🔎 Type part of a name, e.g. gem, spend, ad, health. Leave empty to see everything.")
         sugList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         emptyText = hint("Run Analyze to see suggestions.").apply { setPadding(dp(4), dp(8), 0, dp(8)) }
         spendList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         spendEmptyText = hint("No Spend / drain functions found.").apply { setPadding(dp(4), dp(8), 0, dp(8)) }
         moreBtn = btn("Show more", 2) { sugLimit += 30; renderSuggestions() }
         moreBtn.visibility = View.GONE
-        val exp = card(title("Export"), hint("Save the results as JSON files."),
+        val exp = card(
+            title("📤  Export"),
+            subtitle("Save results as JSON so you can share them, compare two versions of a game, or keep a backup of what you found."),
             row(btn("Suggestions only", 1) { exportSuggestions() }, btn("Everything", 1) { exportJson() }))
         val pg = page(
-            label("1  Files"), files,
-            label("2  Scan"), run,
-            label("3  Fix"),
-            segRow(catGroup), filterField.layout,
+            explainer("🔎", "Find — what to patch",
+                "This tab finds functions by their NAME. Green text = what the patch will do. Tap Apply fix to patch at once, or Edit to check it in Patch first."),
+            label("🗂️  1  FILES", cPrimary()), files,
+            label("🔍  2  SCAN", cSuccess()), run,
+            label("✅  3  FIX", cSuccess()),
+            subtitle("Tap a category chip to filter. Un-tap it to hide that whole category."),
+            segRow(catGroup), filterField.asView(),
             emptyText, sugList.top(0), moreBtn.top(4),
             btn("Add shown to Batch list", 2) { sendToBatch() }.top(8),
-            label("Increase on spend"),
-            hint("Void Spend / drain functions have no return value to patch. Tap one to run Deep Scan on it — spending will then increase the resource instead of decreasing it."),
+            label("💸  INCREASE ON SPEND", cWarning()),
+            subtitle("Void Spend / drain functions have NO return value to patch — so they live here, not in the list above."),
+            hint("Tap one → it fills the Patch address, jumps to Bytes, and runs Deep Scan. Spending will then INCREASE the resource instead of decreasing it."),
             spendEmptyText, spendList.top(0),
-            label("Export"), exp
+            label("📤  EXPORT", cPrimary()), exp
         )
         catGroup.addOnButtonCheckedListener { _, _, _ -> sugLimit = 30; renderSuggestions() }
         filterField.edit.addTextChangedListener(object : TextWatcher {
@@ -401,29 +475,8 @@ class MainActivity : AppCompatActivity() {
         if (sg.isEmpty()) return "Analysis finished, but no matching functions were found."
         return "Found " + cats.joinToString(", ") { c -> "${sg.count { it.category == c }} ${c.lowercase()}" } + " functions."
     }
-    private fun catColor(c: String): Int = when (c) {
-        "Resources" -> 0xFF2E9E6B.toInt()
-        "Ads" -> 0xFFE0702B.toInt()
-        "Premium" -> 0xFF8E5BE0.toInt()
-        "Unlocks" -> 0xFF2E7DD6.toInt()
-        "Timers" -> 0xFF1C9FA6.toInt()
-        "Tutorial" -> 0xFF8A6D3B.toInt()
-        "Achievements" -> 0xFFC9A227.toInt()
-        "God Mode" -> 0xFFC24A4A.toInt()
-        "Damage" -> 0xFFB3461E.toInt()
-        "Stats" -> 0xFF7B61C9.toInt()
-        "Weapons" -> 0xFF9E3B3B.toInt()
-        "Movement" -> 0xFF2E8B8B.toInt()
-        "Enemy" -> 0xFF6B3FA0.toInt()
-        "Map" -> 0xFF3A7D44.toInt()
-        "Save" -> 0xFF8A6D3B.toInt()
-        "Shop" -> 0xFFD67E2C.toInt()
-        "Daily" -> 0xFFC2185B.toInt()
-        "Settings" -> 0xFF607D8B.toInt()
-        "Vehicle" -> 0xFF4E6E8E.toInt()
-        "Bars" -> 0xFF009688.toInt()
-        else -> 0xFF5D5C72.toInt()
-    }
+    private fun catColor(c: String): Int = Hints.colorFor(c)
+    private fun catEmoji(c: String): String = Hints.emojiFor(c)
     private fun effectText(s: Suggestion): String = when (s.kind) {
         "noop" -> "Disabled: does nothing"
         "bool" -> "Always returns " + s.value
@@ -431,20 +484,23 @@ class MainActivity : AppCompatActivity() {
     }
     private fun suggestionCard(s: Suggestion): View {
         val col = catColor(s.category)
-        val pill = tv(s.category.uppercase(), MR.style.TextAppearance_Material3_LabelSmall).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); letterSpacing = 0.08f; setTextColor(col)
+        val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()}", MR.style.TextAppearance_Material3_LabelSmall).apply {
+            typeface = fontTitle(); letterSpacing = 0.08f; setTextColor(col)
             background = GradientDrawable().apply { setColor((col and 0x00FFFFFF) or 0x26000000); cornerRadius = dp(8).toFloat() }
             setPadding(dp(8), dp(2), dp(8), dp(2))
         }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(pill); addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-            addView(hint("RVA 0x%X".format(s.rva)).apply { typeface = Typeface.MONOSPACE })
+            addView(hint("RVA 0x%X".format(s.rva)).apply { typeface = fontMono() })
         }
         val name = tv(s.cls + "." + s.method, MR.style.TextAppearance_Material3_TitleSmall).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); setPadding(0, dp(8), 0, 0)
+            typeface = fontBodyMedium(); setTextColor(cOnSurface()); setPadding(0, dp(8), 0, 0)
         }
-        val effect = tv(effectText(s), MR.style.TextAppearance_Material3_BodyMedium).apply { setTextColor(primaryColor()) }
+        // Effect line is coloured: green = safe return-value patch, orange = check what it does first
+        val effect = tv(effectText(s), MR.style.TextAppearance_Material3_BodyMedium).apply {
+            typeface = fontBodyMedium(); setTextColor(if (s.kind == "noop") cWarning() else cSuccess())
+        }
         lateinit var ap: MaterialButton
         ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }
         val edit = btn("Edit", 2) { applySuggestion(s) }
@@ -458,14 +514,13 @@ class MainActivity : AppCompatActivity() {
     }
     private fun spendCard(s: Suggestion): View {
         val col = catColor(s.category)
-        val pill = tv((s.category.uppercase() + " • SPEND"), MR.style.TextAppearance_Material3_LabelSmall).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); setTextColor(col)
-            setPadding(dp(8), dp(2), dp(8), dp(2))
+        val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()} • SPEND", MR.style.TextAppearance_Material3_LabelSmall).apply {
+            typeface = fontTitle(); setTextColor(col); setPadding(dp(8), dp(2), dp(8), dp(2))
         }
         val name = tv(s.cls + "." + s.method, MR.style.TextAppearance_Material3_TitleSmall).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); setPadding(0, dp(8), 0, 0)
+            typeface = fontBodyMedium(); setTextColor(cOnSurface()); setPadding(0, dp(8), 0, 0)
         }
-        val scanBtn = btn("Increase on spend — Deep Scan") {
+        val scanBtn = btn("💸  Increase on spend — Deep Scan") {
             offsetField.text = "%X".format(s.rva); rvaSwitch.isChecked = true
             goPatch(1); doScanForSub()
         }
@@ -602,72 +657,95 @@ class MainActivity : AppCompatActivity() {
         createDoc(REQ_SAVE_SUGG, "application/json", st.srcName.removeSuffix(".so").removeSuffix(".apk") + "_suggestions.json")
     }
 
+    // ---------- PATCH TAB ----------
     private fun patchPage(): ScrollView {
         typeGroup = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         types.forEach { t ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false
+            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
             typeGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
             typeIds.add(b.id)
         }
         typeGroup.check(typeIds[0])
-        valueField = Field("Value, e.g. 10000", 1, true)
+        valueField = Field("Value, e.g. 10000", 1, true,
+            "💡 What should the function return? For gems = 999999, for bool = true / false, for price = 0.")
         returnResult = resultText()
         val value = section(
-            card(title("Make the function return a value"),
-                hint("The app writes the code for you. The function returns the value at once and its old code no longer runs."),
-                segRow(typeGroup, 12), valueField.layout, btn("Patch function") { doReturnValue() }.top(12)),
-            card(title("Result"), returnResult)
+            card(
+                title("🟢  Make the function return a value"),
+                subtitle("Easiest patch. The function stops running its old code and just returns your value. Best for getters: GetGems, IsPremium, GetHealth."),
+                hint("① Pick the type the function returns (check Find — it says “returns int / bool / float”).  ② Type the value.  ③ Tap Patch function."),
+                segRow(typeGroup, 12), valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
+            card(title("📋  Result"), subtitle("Green = patched. If it says “runs past end”, your address is wrong."), returnResult)
         )
-        bytesField = Field("New bytes: hex or assembly", 3, true)
-        lenField = Field("Bytes to read", 1, true).apply { text = "64" }
+        bytesField = Field("New bytes: hex or assembly", 3, true,
+            "✍️ Two ways: HEX like 1F 20 03 D5  OR  assembly like mov w0, #1; ret. Tap Presets if you're not sure.")
+        lenField = Field("Bytes to read", 1, true, "👀 How many bytes to show when you tap Read. 64 is enough to see the start of a function.")
         patchResult = resultText()
         val bytes = section(
-            card(title("Write bytes"), hint("Hex like 1F 20 03 D5, or assembly like mov w0, #1; ret"), bytesField.layout,
+            card(
+                title("🟠  Write bytes"),
+                subtitle("For when you know exactly what bytes / assembly you want. Advanced — use Value tab if you're unsure."),
+                bytesField.asView(),
                 row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() }),
                 btn("Flip + / − at this address (ARM64)", 2) { doFlipAddSub() }.top(8),
-                btn("Deep scan for subtract (beta, follows branches/calls, ARM64)", 2) { doScanForSub() }.top(8)),
-            card(title("Read bytes"), lenField.layout, btn("Read at address", 1) { doRead() }.top(8)),
-            card(title("Result"), patchResult)
+                hintWarn("↔️ Flip: changes ONE add into sub, or sub into add, at the target address. Use it for Increase-on-Spend.").top(6),
+                btn("Deep scan for subtract (beta, follows branches/calls, ARM64)", 2) { doScanForSub() }.top(8),
+                hint("🔎 Deep Scan: walks the function + functions it calls (depth 3) and lists every sub it finds. Tap one to flip it.").top(6)),
+            card(title("👀  Read bytes"), subtitle("See what's really at the address before you change it."), lenField.asView(), btn("Read at address", 1) { doRead() }.top(8)),
+            card(title("📋  Result"), patchResult)
         )
-        batchField = Field("Patch list", 9, true)
+        batchField = Field("Patch list", 9, true,
+            "📝 One patch per line. # = comment (ignored). See the hint above the box for the exact format.")
         dryCheck = sw("Dry run (check only, change nothing)", prefs.getBoolean("def_dry", false))
         batchResult = resultText()
         val list = section(
-            card(title("Patch list"),
-                hint("One patch per line, numbers in hex:\n1A2B3C: mov w0, #1; ret\n1A2B50: 1F 20 03 D5\n1A2B60: 00 00 80 52 => 20 00 80 52\n1A2B70: return long 10000\nfind FD 7B ?? A9 +4: nop\n# comment").apply { typeface = Typeface.MONOSPACE },
-                batchField.layout, dryCheck, btn("Run list") { runBatch() }.top(8),
+            card(
+                title("🔵  Patch list"),
+                subtitle("Patch many functions at once. Perfect for applying everything you picked in Find."),
+                hint("Format — one per line, numbers in HEX:\n1A2B3C: mov w0, #1; ret\n1A2B50: 1F 20 03 D5\n1A2B60: 00 00 80 52 => 20 00 80 52\n1A2B70: return long 10000\nfind FD 7B ?? A9 +4: nop\n# comment").apply { typeface = fontMono() },
+                batchField.asView(), dryCheck,
+                hintWarn("⚠️ ALWAYS run with Dry run ON first. If it says 0 errors, turn Dry run OFF and run again to really patch.").top(4),
+                btn("Run list") { runBatch() }.top(8),
                 row(btn("Load", 2) { pickText(REQ_LOAD_PATCHES) }, btn("Save", 2) { saveText() })),
-            card(title("Result"), batchResult)
+            card(title("📋  Result"), batchResult)
         )
-        patternField = Field("Bytes with ?? wildcards", 1, true)
+        patternField = Field("Bytes with ?? wildcards", 1, true,
+            "🔍 Example: FD 7B ?? A9 ?? ?? 00 91  —  ?? means “any byte”. Patterns survive game updates better than addresses.")
         searchResult = resultText()
         val search = section(
-            card(title("Find a byte pattern"), hint("Offsets change with every game update, patterns usually don't. Example: FD 7B ?? A9 ?? ?? 00 91"),
-                patternField.layout, btn("Search") { doFind() }.top(8)),
-            card(title("Matches"), searchResult)
+            card(
+                title("🟣  Find a byte pattern"),
+                subtitle("Find code by its bytes, not its address. Useful when Il2CppDumper addresses are old / the game updated."),
+                patternField.asView(), btn("Search") { doFind() }.top(8),
+                hint("Tap a match to use it as your target address.").top(6)),
+            card(title("🎯  Matches"), searchResult)
         )
         sections = listOf(value, bytes, list, search)
         segGroup = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         listOf("Value", "Bytes", "List", "Search").forEach { t ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false
+            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
             segGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
             segIds.add(b.id)
         }
         targetCard.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(12); bottomMargin = dp(12) }
-        val pg = page(segRow(segGroup, 4), targetCard, *sections.toTypedArray())
+        val pg = page(
+            explainer("✏️", "Patch — change one function",
+                "Everything here edits the function at the 🎯 Target address at the top. Value = easiest, Bytes = full control, List = many at once, Search = find by bytes."),
+            segRow(segGroup, 4), targetCard, *sections.toTypedArray())
         segGroup.addOnButtonCheckedListener { _, id, checked -> if (checked) showSeg(segIds.indexOf(id)) }
         segGroup.check(segIds[0]); showSeg(0); return pg
     }
 
+    // ---------- SETTINGS + LOG ----------
     private fun settingsPage(): ScrollView {
         val themeGroup = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
         val themeIds = ArrayList<Int>()
         val themeModes = listOf("System" to AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, "Light" to AppCompatDelegate.MODE_NIGHT_NO, "Dark" to AppCompatDelegate.MODE_NIGHT_YES)
         themeModes.forEach { (t, _) ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false
+            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
             themeGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
             themeIds.add(b.id)
         }
@@ -679,19 +757,35 @@ class MainActivity : AppCompatActivity() {
             val i = themeIds.indexOf(id); if (i < 0) return@addOnButtonCheckedListener
             val mode = themeModes[i].second; prefs.edit().putInt("night", mode).apply(); AppCompatDelegate.setDefaultNightMode(mode)
         }
-        val theme = card(title("Appearance"), hint("Theme"), segRow(themeGroup, 8))
+        val theme = card(title("🎨  Appearance"), subtitle("Material You follows your phone's wallpaper colours in Light / Dark. System = follow your phone."), segRow(themeGroup, 8))
         val defAuto = sw("Write each change straight into the original file", autoSwitch.isChecked)
         defAuto.setOnCheckedChangeListener { _, on -> autoSwitch.isChecked = on; prefs.edit().putBoolean("def_auto", on).apply() }
         val defRva = sw("Use RVA (Il2CppDumper addresses) by default", rvaSwitch.isChecked)
         defRva.setOnCheckedChangeListener { _, on -> rvaSwitch.isChecked = on; prefs.edit().putBoolean("def_rva", on).apply() }
         val defDry = sw("Dry run by default in the patch list", dryCheck.isChecked)
         defDry.setOnCheckedChangeListener { _, on -> dryCheck.isChecked = on; prefs.edit().putBoolean("def_dry", on).apply() }
-        val defaults = card(title("Defaults"), hint("Remembered for next time you open the app."), defAuto, defRva, defDry)
-        val storage = card(title("Storage"), hint("Clears the metadata and APK copies this app keeps on the device. Your save files are not touched."),
+        val defaults = card(
+            title("⚙️  Defaults"),
+            subtitle("These are remembered for next time you open the app. Change them here, or on Start / Patch — they stay in sync."),
+            defAuto,
+            hint("Auto-write ON = every patch saves instantly. OFF = patches only live in the app until you tap Save. Beginners: keep ON, use Undo if needed.").top(2),
+            defRva,
+            hint("RVA ON = you paste addresses from Il2CppDumper / Find. OFF = you paste raw file offsets (from a hex editor). Most people want ON.").top(2),
+            defDry,
+            hint("Dry run ON = Patch List only checks, never changes anything. Safest default.").top(2))
+        val storage = card(
+            title("🧹  Storage"),
+            subtitle("Clears the metadata and APK copies this app keeps. Your game saves are NOT touched."),
             row(btn("Clear cache", 2) { clearCache() }, btn("Clear log", 2) { st.log = ""; if (::logText.isInitialized) logText.text = "" }))
         val verName = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
-        val about = card(title("About"), hint("Il2Patch $verName\nFor offline, single-player games you own. A repacked APK needs the original app uninstalled first, and in-game saves are usually lost unless you back them up."))
-        return page(theme, defaults, storage, about)
+        val about = card(
+            title("ℹ️  About"),
+            subtitle("Il2Patch $verName\nFor offline, single-player games you own. A repacked APK needs the original app uninstalled first, and in-game saves are usually lost unless you back them up."),
+            hint("Made for learning how Unity / IL2CPP games store values. Use it on your own copy, for your own use."))
+        return page(
+            explainer("⚙️", "Settings — make the app yours",
+                "Theme, defaults, and storage. Nothing here patches a game — it only changes how the app looks and behaves."),
+            theme, defaults, storage, about)
     }
     private fun clearCache() {
         bg {
@@ -703,8 +797,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun logPage(): ScrollView {
-        logText = tv(st.log, MR.style.TextAppearance_Material3_BodySmall).apply { typeface = Typeface.MONOSPACE; setTextIsSelectable(true) }
-        return page(card(title("Log"), logText), btn("Clear log", 2) { st.log = ""; logText.text = "" })
+        logText = tv(st.log, MR.style.TextAppearance_Material3_BodySmall).apply { typeface = fontMono(); setTextIsSelectable(true); setTextColor(cOnVariant()) }
+        return page(
+            explainer("📜", "Log — what happened",
+                "Every patch, undo, analysis and error is written here, newest first. If something doesn't work, copy this page and send it — it tells us the exact address + bytes."),
+            card(title("📜  Log"), logText), btn("Clear log", 2) { st.log = ""; logText.text = "" })
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
