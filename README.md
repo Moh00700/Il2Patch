@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Moh00700/Il2Patch/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="200" alt="Il2Patch logo">
+  <img src="docs/images/icon.png" width="200" alt="Il2Patch logo">
 </p>
 
 <h1 align="center">Il2Patch</h1>
