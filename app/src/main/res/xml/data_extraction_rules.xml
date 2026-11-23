@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Il2Patch — Android 12+ Data Extraction Rules
+     Used by AndroidManifest.xml -> android:dataExtractionRules="@xml/data_extraction_rules"
+     Controls what gets backed up / transferred to a new phone. -->
+<data-extraction-rules xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Cloud backup — allow app settings, but NEVER game files / patched binaries -->
+    <cloud-backup>
+        <!-- Back up: app settings, theme, RVA switch, dry-run, etc. -->
+        <include domain="sharedpref" path="." />
+        <include domain="database" path="." />
+
+        <!-- Never back up: work files, patched .so / APK, cache, logs -->
+        <exclude domain="file" path="work.bin" />
+        <exclude domain="file" path="patched" />
+        <exclude domain="file" path="cache" />
+        <exclude domain="file" path="logs" />
+        <exclude domain="file" path="." />
+    </cloud-backup>
+
+    <!-- Device-to-device transfer — same rules as cloud backup -->
+    <device-transfer>
+        <include domain="sharedpref" path="." />
+        <include domain="database" path="." />
+        <exclude domain="file" path="." />
+    </device-transfer>
+
+</data-extraction-rules>
