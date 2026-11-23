@@ -129,15 +129,15 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- Material You helpers ----------
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    private fun cPrimary() = MaterialColors.getColor(this, MR.attr.colorPrimary, 0xFF4A44D6.toInt())
-    private fun cOnPrimaryContainer() = MaterialColors.getColor(this, MR.attr.colorOnPrimaryContainer, 0xFF1A1A1A)
-    private fun cPrimaryContainer() = MaterialColors.getColor(this, MR.attr.colorPrimaryContainer, 0xFFE8E0FF.toInt())
-    private fun cSurfaceVariant() = MaterialColors.getColor(this, MR.attr.colorSurfaceVariant, 0xFFF0F0F0)
-    private fun cOnSurface() = MaterialColors.getColor(this, MR.attr.colorOnSurface, 0xFF1A1A1A)
-    private fun cOnVariant() = MaterialColors.getColor(this, MR.attr.colorOnSurfaceVariant, 0xFF555555)
-    private fun cError() = MaterialColors.getColor(this, MR.attr.colorError, 0xFFB3261E.toInt())
-    private fun cSuccess() = 0xFF1E8E5A.toInt()
-    private fun cWarning() = 0xFFB26A00.toInt()
+    private fun cPrimary(): Int = MaterialColors.getColor(this, MR.attr.colorPrimary, 0xFF4A44D6.toInt())
+    private fun cOnPrimaryContainer(): Int = MaterialColors.getColor(this, MR.attr.colorOnPrimaryContainer, 0xFF1A1A1A.toInt())
+    private fun cPrimaryContainer(): Int = MaterialColors.getColor(this, MR.attr.colorPrimaryContainer, 0xFFE8E0FF.toInt())
+    private fun cSurfaceVariant(): Int = MaterialColors.getColor(this, MR.attr.colorSurfaceVariant, 0xFFF0F0F0.toInt())
+    private fun cOnSurface(): Int = MaterialColors.getColor(this, MR.attr.colorOnSurface, 0xFF1A1A1A.toInt())
+    private fun cOnVariant(): Int = MaterialColors.getColor(this, MR.attr.colorOnSurfaceVariant, 0xFF555555.toInt())
+    private fun cError(): Int = MaterialColors.getColor(this, MR.attr.colorError, 0xFFB3261E.toInt())
+    private fun cSuccess(): Int = 0xFF1E8E5A.toInt()
+    private fun cWarning(): Int = 0xFFB26A00.toInt()
 
     private fun fontTitle(): Typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
     private fun fontBody(): Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -155,17 +155,17 @@ class MainActivity : AppCompatActivity() {
         TextView(this).apply { this.text = text; setTextAppearance(style); typeface = fontBody() }
 
     private fun title(t: String) = tv(t, MR.style.TextAppearance_Material3_TitleLarge).apply {
-        typeface = fontTitle(); setTextColor(cOnSurface()); setPadding(0, 0, 0, dp(4)); textSize = 20f
+        typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(4)); textSize = 20f
     }
     private fun subtitle(t: String) = tv(t, MR.style.TextAppearance_Material3_BodyMedium).apply {
-        typeface = fontBody(); setTextColor(cOnVariant()); setPadding(0, 0, 0, dp(8)); lineSpacing(1.15f, 1.15f)
+        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); lineSpacing(1.15f, 1.15f)
     }
     // Section header: coloured by location, e.g. "💎  1  FILES" in Find, "✏️  VALUE" in Patch
     private fun label(t: String, color: Int = cPrimary()) = tv(t.uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
-        typeface = fontTitle(); letterSpacing = 0.12f; setTextColor(color); setPadding(dp(4), dp(16), 0, dp(6)); textSize = 13f
+        typeface = fontTitle(); letterSpacing = 0.12f; setTextColor(color.toInt()); setPadding(dp(4), dp(16), 0, dp(6)); textSize = 13f
     }
     private fun hint(t: String, color: Int = cOnVariant()) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
-        typeface = fontBody(); setTextColor(color); lineSpacing(1.2f, 1.2f)
+        typeface = fontBody(); setTextColor(color.toInt()); lineSpacing(1.2f, 1.2f)
     }
     private fun hintSuccess(t: String) = hint(t, cSuccess())
     private fun hintWarn(t: String) = hint(t, cWarning())
@@ -174,10 +174,10 @@ class MainActivity : AppCompatActivity() {
     // Explainer card at top of each tab — icon + title + plain-language explanation
     private fun explainer(emoji: String, titleText: String, body: String, bg: Int = cPrimaryContainer(), fg: Int = cOnPrimaryContainer()): MaterialCardView {
         val t = tv("$emoji  $titleText", MR.style.TextAppearance_Material3_TitleMedium).apply {
-            typeface = fontTitle(); setTextColor(fg)
+            typeface = fontTitle(); setTextColor(fg.toInt())
         }
         val b = tv(body, MR.style.TextAppearance_Material3_BodyMedium).apply {
-            typeface = fontBody(); setTextColor(fg); setPadding(0, dp(4), 0, 0); lineSpacing(1.2f, 1.2f)
+            typeface = fontBody(); setTextColor(fg.toInt()); setPadding(0, dp(4), 0, 0); lineSpacing(1.2f, 1.2f)
         }
         val c = card(t, b)
         c.setCardBackgroundColor(bg)
@@ -200,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         val b = when (kind) {
             1 -> MaterialButton(ContextThemeWrapper(this, R.style.ThemeOverlay_Il2Patch_Tonal))
             2 -> MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            3 -> MaterialButton(this).apply { setTextColor(cError()) } // danger
+            3 -> MaterialButton(this).apply { setTextColor(cError().toInt()) } // danger
             else -> MaterialButton(this)
         }
         b.text = text; b.isAllCaps = false
@@ -239,10 +239,10 @@ class MainActivity : AppCompatActivity() {
     }
     private fun sw(text: String, checked: Boolean) = MaterialSwitch(this).apply { this.text = text; isChecked = checked; typeface = fontBody() }.top(4)
     private fun resultText() = tv("Nothing yet.", MR.style.TextAppearance_Material3_BodySmall).apply {
-        typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cOnVariant())
+        typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
     }
     private fun resultSuccess(t: String) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
-        typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cSuccess())
+        typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cSuccess().toInt())
     }
     private fun page(vararg views: View) = ScrollView(this).apply {
         val col = LinearLayout(context).apply {
@@ -346,7 +346,7 @@ class MainActivity : AppCompatActivity() {
         }
         row.addView(logo, LinearLayout.LayoutParams(dp(46), dp(46)))
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0) }
-        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnPrimaryContainer()); textSize = 22f })
+        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnPrimaryContainer().toInt()); textSize = 22f })
         statusText = hint(st.status, cOnPrimaryContainer()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         col.addView(statusText)
         row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
@@ -410,7 +410,7 @@ class MainActivity : AppCompatActivity() {
     // ---------- START TAB ----------
     private fun startPage(): ScrollView {
         hintText = tv("", MR.style.TextAppearance_Material3_BodyLarge).apply {
-            typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer())
+            typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer().toInt())
         }
         val hero = explainer("🚀", "Patch a game in 3 steps",
             "1️⃣ Open your file  •  2️⃣ Find the function in Find  •  3️⃣ Patch it & Save.\nYou never need a PC — everything runs on your phone.")
@@ -444,7 +444,7 @@ class MainActivity : AppCompatActivity() {
             title("🗂️  Metadata"),
             subtitle("global-metadata.dat tells the app the real names of every class & method. Without it, Find can't suggest anything."),
             metaText, rowAsym(btn("Pick metadata file", 1) { pickMeta() }, btn("Advanced", 2) { toggle(adv) }), adv)
-        sumText = tv(summaryLine(), MR.style.TextAppearance_Material3_BodyLarge).apply { typeface = fontBodyMedium(); setTextColor(cOnSurface()) }
+        sumText = tv(summaryLine(), MR.style.TextAppearance_Material3_BodyLarge).apply { typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()) }
         dumpSummary = hint(if (st.dumpReport.isEmpty()) "" else st.dumpReport).apply {
             typeface = fontMono(); textSize = 11f; setTextIsSelectable(true); visibility = View.GONE
         }
@@ -515,7 +515,7 @@ class MainActivity : AppCompatActivity() {
     private fun suggestionCard(s: Suggestion): View {
         val col = catColor(s.category)
         val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()}", MR.style.TextAppearance_Material3_LabelSmall).apply {
-            typeface = fontTitle(); letterSpacing = 0.08f; setTextColor(col)
+            typeface = fontTitle(); letterSpacing = 0.08f; setTextColor(col.toInt())
             background = GradientDrawable().apply { setColor((col and 0x00FFFFFF) or 0x26000000); cornerRadius = dp(8).toFloat() }
             setPadding(dp(8), dp(2), dp(8), dp(2))
         }
@@ -525,11 +525,11 @@ class MainActivity : AppCompatActivity() {
             addView(hint("RVA 0x%X".format(s.rva)).apply { typeface = fontMono() })
         }
         val name = tv(s.cls + "." + s.method, MR.style.TextAppearance_Material3_TitleSmall).apply {
-            typeface = fontBodyMedium(); setTextColor(cOnSurface()); setPadding(0, dp(8), 0, 0)
+            typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()); setPadding(0, dp(8), 0, 0)
         }
         // Effect line is coloured: green = safe return-value patch, orange = check what it does first
         val effect = tv(effectText(s), MR.style.TextAppearance_Material3_BodyMedium).apply {
-            typeface = fontBodyMedium(); setTextColor(if (s.kind == "noop") cWarning() else cSuccess())
+            typeface = fontBodyMedium(); setTextColor((if (s.kind == "noop") cWarning() else cSuccess()).toInt())
         }
         lateinit var ap: MaterialButton
         ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }
@@ -545,10 +545,10 @@ class MainActivity : AppCompatActivity() {
     private fun spendCard(s: Suggestion): View {
         val col = catColor(s.category)
         val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()} • SPEND", MR.style.TextAppearance_Material3_LabelSmall).apply {
-            typeface = fontTitle(); setTextColor(col); setPadding(dp(8), dp(2), dp(8), dp(2))
+            typeface = fontTitle(); setTextColor(col.toInt()); setPadding(dp(8), dp(2), dp(8), dp(2))
         }
         val name = tv(s.cls + "." + s.method, MR.style.TextAppearance_Material3_TitleSmall).apply {
-            typeface = fontBodyMedium(); setTextColor(cOnSurface()); setPadding(0, dp(8), 0, 0)
+            typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()); setPadding(0, dp(8), 0, 0)
         }
         val scanBtn = btn("💸  Increase on spend — Deep Scan") {
             offsetField.text = "%X".format(s.rva); rvaSwitch.isChecked = true
@@ -827,7 +827,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun logPage(): ScrollView {
-        logText = tv(st.log, MR.style.TextAppearance_Material3_BodySmall).apply { typeface = fontMono(); setTextIsSelectable(true); setTextColor(cOnVariant()) }
+        logText = tv(st.log, MR.style.TextAppearance_Material3_BodySmall).apply { typeface = fontMono(); setTextIsSelectable(true); setTextColor(cOnVariant().toInt()) }
         return page(
             explainer("📜", "Log — what happened",
                 "Every patch, undo, analysis and error is written here, newest first. If something doesn't work, copy this page and send it — it tells us the exact address + bytes."),
