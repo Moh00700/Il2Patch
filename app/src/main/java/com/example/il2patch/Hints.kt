@@ -1,6 +1,22 @@
 package com.example.il2patch
 
-/** A function that probably controls a resource, ads, premium or similar status, with a ready-made patch. */
+/**
+ * 💎 Hints.kt — Name-based suggestions
+ * --------------------------------------------------
+ * This file GUESSES what a function does from its NAME only.
+ * It does NOT read the game's logic.
+ *
+ * Example:
+ *   GetGems()      -> probably returns gems ✅
+ *   IsPremium()    -> probably returns premium status ✅
+ *   GetSomething() -> might be something else ❌
+ *
+ * ALWAYS test in-game after patching. If it crashes / does nothing -> Undo.
+ *
+ * 🎨 COLOUR SYSTEM — must match MainActivity.kt catColor():
+ *   Each category has ONE emoji + ONE colour. Change it here AND in MainActivity.
+ *   Green = safe return-value patch | Orange = check first | Red = dangerous
+ */
 class Suggestion(
     val category: String,
     val cls: String,
@@ -16,10 +32,51 @@ class Suggestion(
 ) {
     fun patch(): String = if (kind.isEmpty() || kind == "noop") "ret" else "return $kind $value"
     fun batchLine(): String = "%X: %s".format(rva, patch())
+
+    // 🎨 Helpers so MainActivity never hard-codes colours twice
+    fun emoji(): String = Hints.emojiFor(category)
+    fun color(): Int = Hints.colorFor(category)
 }
 
 /** Name-based hints. These are guesses from function names: always verify before relying on one. */
 object Hints {
+
+    // ============================================================
+    // 🎨 MATERIAL YOU — CATEGORY SYSTEM (single source of truth)
+    // Keep this in sync with MainActivity.kt catColor()
+    // ============================================================
+    data class CatInfo(val emoji: String, val color: Int, val blurb: String)
+
+    val CATEGORIES: Map<String, CatInfo> = mapOf(
+        "Resources"    to CatInfo("💎", 0xFF2E9E6B.toInt(), "Gems / coins / gold — always returns a big number"),
+        "Ads"          to CatInfo("📺", 0xFFE0702B.toInt(), "ShowAd / Rewarded — does nothing, so no ads"),
+        "Premium"      to CatInfo("👑", 0xFF8E5BE0.toInt(), "IsPremium / VIP — always true"),
+        "Unlocks"      to CatInfo("🔓", 0xFF2E7DD6.toInt(), "IsUnlocked — always true"),
+        "Timers"       to CatInfo("⏳", 0xFF1C9FA6.toInt(), "Cooldown / regen — 0 = ready now"),
+        "Tutorial"     to CatInfo("🎓", 0xFF8A6D3B.toInt(), "Tutorial / Rate-us — skip it"),
+        "Achievements" to CatInfo("🏆", 0xFFC9A227.toInt(), "Achievement / stars — unlocked"),
+        "God Mode"     to CatInfo("❤️", 0xFFC24A4A.toInt(), "TakeDamage / Die — does nothing = invincible"),
+        "Damage"       to CatInfo("⚔️", 0xFFB3461E.toInt(), "Attack / damage — FLAT override, NOT a multiplier"),
+        "Stats"        to CatInfo("📈", 0xFF7B61C9.toInt(), "XP / Level / Skill — always max"),
+        "Weapons"      to CatInfo("🔫", 0xFF9E3B3B.toInt(), "Ammo / weapon / durability — always full"),
+        "Movement"     to CatInfo("💨", 0xFF2E8B8B.toInt(), "Speed / Jump — very big, can break physics"),
+        "Enemy"        to CatInfo("👹", 0xFF6B3FA0.toInt(), "Enemy / Boss / Spawn — 0 = none / easiest"),
+        "Map"          to CatInfo("🗺️", 0xFF3A7D44.toInt(), "Map / Fog / Vision — max view distance"),
+        "Save"         to CatInfo("💾", 0xFF8A6D3B.toInt(), "Save / Load — bool checks only, never patch blindly"),
+        "Shop"         to CatInfo("🛒", 0xFFD67E2C.toInt(), "Shop / Price / Gacha — 0 = free"),
+        "Daily"        to CatInfo("📅", 0xFFC2185B.toInt(), "Daily / Quest / Reward — can claim"),
+        "Settings"     to CatInfo("⚙️", 0xFF607D8B.toInt(), "Debug / Cheat / Config — bool only, can crash"),
+        "Vehicle"      to CatInfo("🚗", 0xFF4E6E8E.toInt(), "Car / Pet / Mount / Building — max stat"),
+        "Bars"         to CatInfo("🟢", 0xFF009688.toInt(), "Energy / Stamina / Mana / Shield — always full")
+    )
+
+    fun emojiFor(cat: String): String = CATEGORIES[cat]?.emoji ?: "🔹"
+    fun colorFor(cat: String): Int = CATEGORIES[cat]?.color ?: 0xFF5D5C72.toInt()
+    fun blurbFor(cat: String): String = CATEGORIES[cat]?.blurb ?: ""
+
+    // ============================================================
+    // 🔤 NAME WORD LISTS — what we look for in a function name
+    // ============================================================
     private val CURRENCY = setOf(
         "gem", "gems", "coin", "coins", "cash", "gold", "diamond", "diamonds", "money", "credit", "credits",
         "crystal", "crystals", "ticket", "tickets", "resource", "resources", "currency",
@@ -125,6 +182,7 @@ object Hints {
     private const val SHOW = 5
     private const val OTHER = 6
 
+    // Splits "GetGems", "get_gems", "GETGems" -> ["get", "gems"]
     fun tokens(s: String): List<String> {
         val out = ArrayList<String>()
         val sb = StringBuilder()
@@ -155,6 +213,7 @@ object Hints {
         else -> "other"
     }
 
+    // 🟢 Safe big value per type — never overflows the type
     private fun bigValue(ret: String, kind: String): String = when (kind) {
         "long" -> "999999999"
         "float", "double" -> "999999"
@@ -202,7 +261,7 @@ object Hints {
         val numeric = kind == "int" || kind == "long" || kind == "float" || kind == "double"
         val negative = mt.any { it in NEGATIVE }
 
-        // Resources
+        // 💎 Resources
         run {
             val mHit = mt.any { it in CURRENCY }
             val cHit = ct.any { it in CURRENCY }
@@ -218,7 +277,7 @@ object Hints {
                 }
             }
         }
-        // Ads
+        // 📺 Ads
         run {
             val mHit = mt.any { it in ADS }
             val cHit = ct.any { it in ADS }
@@ -237,7 +296,7 @@ object Hints {
                 }
             }
         }
-        // Premium
+        // 👑 Premium
         run {
             val mHit = mt.any { it in PREMIUM }
             val cHit = ct.any { it in PREMIUM }
@@ -249,7 +308,7 @@ object Hints {
                 }
             }
         }
-        // Unlocks
+        // 🔓 Unlocks
         run {
             val mHit = mt.any { it in UNLOCKS }
             if (mHit) {
@@ -257,7 +316,7 @@ object Hints {
                 if ((op == CHECK || op == GET) && kind == "bool") make("Unlocks", "bool", if (negative) "false" else "true", "Unlock status (level, chapter, character or skin).", score + 1)
             }
         }
-        // Timers
+        // ⏳ Timers
         run {
             val mHit = mt.any { it in TIMERS }
             val cHit = ct.any { it in TIMERS }
@@ -269,7 +328,7 @@ object Hints {
                 }
             }
         }
-        // Tutorial
+        // 🎓 Tutorial
         run {
             val mHit = mt.any { it in TUTORIAL }
             val cHit = ct.any { it in TUTORIAL }
@@ -279,7 +338,7 @@ object Hints {
                 if ((op == SHOW || op == CHECK) && kind == "bool") make("Tutorial", "bool", if (negative) "true" else "false", "Skip the tutorial / hide the prompt.", score + 1)
             }
         }
-        // Achievements
+        // 🏆 Achievements
         run {
             val mHit = mt.any { it in ACHIEVEMENTS }
             val cHit = ct.any { it in ACHIEVEMENTS }
@@ -291,7 +350,7 @@ object Hints {
                 }
             }
         }
-        // God Mode
+        // ❤️ God Mode
         run {
             val mHit = mt.any { it in GODMODE }
             val cHit = ct.any { it in GODMODE }
@@ -305,7 +364,7 @@ object Hints {
                 }
             }
         }
-        // Damage — NOT a true multiplier, flat override only
+        // ⚔️ Damage — NOT a true multiplier, flat override only
         run {
             val mHit = mt.any { it in DAMAGE_DEALT }
             val cHit = ct.any { it in DAMAGE_DEALT }
@@ -314,7 +373,7 @@ object Hints {
                 make("Damage", kind, bigValue(r.ret, kind), "Getter: attack / damage stat. This overrides it to a large fixed value, not a true multiplier.", score + 2)
             }
         }
-        // Stats
+        // 📈 Stats
         run {
             val mHit = mt.any { it in STATS }
             val cHit = ct.any { it in STATS }
@@ -326,7 +385,7 @@ object Hints {
                 }
             }
         }
-        // Weapons
+        // 🔫 Weapons
         run {
             val mHit = mt.any { it in WEAPONS }
             val cHit = ct.any { it in WEAPONS }
@@ -339,7 +398,7 @@ object Hints {
                 }
             }
         }
-        // Movement
+        // 💨 Movement
         run {
             val mHit = mt.any { it in MOVEMENT }
             val cHit = ct.any { it in MOVEMENT }
@@ -348,7 +407,7 @@ object Hints {
                 if (op == GET && numeric) make("Movement", kind, bigValue(r.ret, kind), "Getter: speed / jump / movement; very large value. Verify — too large can break physics.", score + 2)
             }
         }
-        // Enemy
+        // 👹 Enemy
         run {
             val mHit = mt.any { it in ENEMY }
             val cHit = ct.any { it in ENEMY }
@@ -360,7 +419,7 @@ object Hints {
                 }
             }
         }
-        // Map
+        // 🗺️ Map
         run {
             val mHit = mt.any { it in MAP_CAMERA }
             val cHit = ct.any { it in MAP_CAMERA }
@@ -372,12 +431,12 @@ object Hints {
                 }
             }
         }
-        // Save — bool checks only
+        // 💾 Save — bool checks only
         run {
             val mHit = mt.any { it in SAVE_ACCOUNT }
             if (mHit && op == CHECK && kind == "bool") make("Save", "bool", if (negative) "false" else "true", "Save / account check. Verify — do not patch save/load blindly.", 3)
         }
-        // Shop
+        // 🛒 Shop
         run {
             val mHit = mt.any { it in SHOP_GACHA }
             val cHit = ct.any { it in SHOP_GACHA }
@@ -389,7 +448,7 @@ object Hints {
                 }
             }
         }
-        // Daily
+        // 📅 Daily
         run {
             val mHit = mt.any { it in DAILY_EVENTS }
             val cHit = ct.any { it in DAILY_EVENTS }
@@ -401,12 +460,12 @@ object Hints {
                 }
             }
         }
-        // Settings — bool checks only
+        // ⚙️ Settings — bool checks only
         run {
             val mHit = mt.any { it in SETTINGS_DEBUG }
             if (mHit && op == CHECK && kind == "bool") make("Settings", "bool", if (negative) "false" else "true", "Debug / cheat / setting enabled check. Verify — debug flags can crash a build.", 3)
         }
-        // Vehicle
+        // 🚗 Vehicle
         run {
             val mHit = mt.any { it in VEHICLE_PET_BUILDING }
             val cHit = ct.any { it in VEHICLE_PET_BUILDING }
@@ -418,7 +477,7 @@ object Hints {
                 }
             }
         }
-        // Bars
+        // 🟢 Bars
         run {
             val mHit = mt.any { it in BARS }
             val cHit = ct.any { it in BARS }
