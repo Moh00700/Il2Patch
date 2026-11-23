@@ -138,6 +138,31 @@ class MainActivity : AppCompatActivity() {
     private fun cError(): Int = MaterialColors.getColor(this, MR.attr.colorError, 0xFFB3261E.toInt())
     private fun cSuccess(): Int = 0xFF1E8E5A.toInt()
     private fun cWarning(): Int = 0xFFB26A00.toInt()
+    // ---- Modern design system (Obtainium / Morphe style) ----
+    // Light: white bg, pastel cards. Dark: near-black bg, gradient cards.
+    // All cards 28dp, all buttons pill 28dp, floating pill bottom nav.
+    private fun isNight(): Boolean = isNightNow()
+    private fun cCardBg(): Int = if (isNight()) 0xFF1E1E24.toInt() else 0xFFF2F0FA.toInt()
+    private fun cCardBg2(): Int = if (isNight()) 0xFF252530.toInt() else 0xFFE8E0F5.toInt()
+    private fun cNavBg(): Int = if (isNight()) 0xFF2A2A33.toInt() else 0xFFFFFFFF.toInt()
+    private fun gradDrawable(start: Int, end: Int, radiusDp: Int = 28): GradientDrawable =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(start, end)).apply { cornerRadius = dp(radiusDp).toFloat() }
+    private fun pillDrawable(color: Int, radiusDp: Int = 28): GradientDrawable =
+        GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
+    // Morphe-style gradient pairs for hero / suggestion cards (dark mode pops, light mode stays soft)
+    private fun heroGrad(): GradientDrawable = if (isNight())
+        gradDrawable(0xFF1E3A8A.toInt(), 0xFF0D9488.toInt(), 28)
+    else gradDrawable(0xFF4A44D6.toInt(), 0xFF00C2A8.toInt(), 28)
+    private fun gradForCategory(cat: String): GradientDrawable {
+        if (!isNight()) return pillDrawable(cCardBg())
+        return when (cat) {
+            "Currency", "Spend", "Coins" -> gradDrawable(0xFF7C3A00.toInt(), 0xFF0D9488.toInt(), 24)
+            "Health", "Lives" -> gradDrawable(0xFF9F1239.toInt(), 0xFF0D9488.toInt(), 24)
+            "Damage", "Attack" -> gradDrawable(0xFFB91C1C.toInt(), 0xFF0D9488.toInt(), 24)
+            "Speed", "Movement" -> gradDrawable(0xFF1E40AF.toInt(), 0xFF0D9488.toInt(), 24)
+            else -> gradDrawable(0xFF312E81.toInt(), 0xFF0D9488.toInt(), 24)
+        }
+    }
 
     private fun fontTitle(): Typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
     private fun fontBody(): Typeface = Typeface.create("sans-serif", Typeface.NORMAL)
@@ -155,7 +180,7 @@ class MainActivity : AppCompatActivity() {
         TextView(this).apply { this.text = text; setTextAppearance(style); typeface = fontBody() }
 
     private fun title(t: String) = tv(t, MR.style.TextAppearance_Material3_TitleLarge).apply {
-        typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(4)); textSize = 20f
+        typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(4)); textSize = 24f; letterSpacing = -0.01f
     }
     private fun subtitle(t: String) = tv(t, MR.style.TextAppearance_Material3_BodyMedium).apply {
         typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); setLineSpacing(0f, 1.15f)
@@ -180,7 +205,11 @@ class MainActivity : AppCompatActivity() {
             typeface = fontBody(); setTextColor(fg.toInt()); setPadding(0, dp(4), 0, 0); setLineSpacing(0f, 1.2f)
         }
         val c = card(t, b)
-        c.setCardBackgroundColor(bg)
+        // Modern hero: gradient in both modes, white text always readable
+        c.background = heroGrad()
+        c.setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+        t.setTextColor(0xFFFFFFFF.toInt()); b.setTextColor(0xFFFFFFFF.toInt())
+        c.cardElevation = dp(4).toFloat()
         return c
     }
 
@@ -204,7 +233,7 @@ class MainActivity : AppCompatActivity() {
             else -> MaterialButton(this)
         }
         b.text = text; b.isAllCaps = false
-        b.typeface = fontBodyMedium(); b.cornerRadius = dp(16)
+        b.typeface = fontBodyMedium(); b.cornerRadius = dp(28); b.minimumHeight = dp(56)
         b.setOnClickListener { v ->
             v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(70).withEndAction {
                 v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
@@ -230,11 +259,14 @@ class MainActivity : AppCompatActivity() {
     private fun card(vararg children: View): MaterialCardView {
         val c = MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle)
         val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(16), dp(18), dp(16))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(18), dp(20), dp(18))
         }
         children.forEach { col.addView(it) }
-        c.addView(col); c.radius = dp(20).toFloat()
-        c.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
+        c.addView(col); c.radius = dp(28).toFloat()
+        c.setCardBackgroundColor(cCardBg())
+        c.cardElevation = dp(2).toFloat()
+        c.strokeWidth = 0
+        c.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
         return c
     }
     private fun sw(text: String, checked: Boolean) = MaterialSwitch(this).apply { this.text = text; isChecked = checked; typeface = fontBody() }.top(4)
@@ -246,7 +278,7 @@ class MainActivity : AppCompatActivity() {
     }
     private fun page(vararg views: View) = ScrollView(this).apply {
         val col = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(24))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(32))
         }
         views.forEach { col.addView(it) }; addView(col); clipToPadding = false
     }
@@ -334,23 +366,37 @@ class MainActivity : AppCompatActivity() {
     private fun isNightNow(): Boolean =
         (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     private fun header(): View {
+        // Modern top bar: transparent bg, logo in gradient squircle, big title.
+        // Status sits in a soft pill below — like Obtainium's search pill.
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(4))
+        }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(14), dp(14), dp(10))
-            setBackgroundColor(cPrimaryContainer())
         }
         val logo = ImageView(this).apply {
             setImageResource(R.drawable.ic_launcher_foreground)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF3B2FC9.toInt(), 0xFF00C2A8.toInt())).apply { cornerRadius = dp(14).toFloat() }
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF4A44D6.toInt(), 0xFF00C2A8.toInt())).apply { cornerRadius = dp(18).toFloat() }
             scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
         }
-        row.addView(logo, LinearLayout.LayoutParams(dp(46), dp(46)))
+        row.addView(logo, LinearLayout.LayoutParams(dp(52), dp(52)))
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0) }
-        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnPrimaryContainer().toInt()); textSize = 22f })
-        statusText = hint(st.status, cOnPrimaryContainer()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        col.addView(statusText)
+        col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnSurface().toInt()); textSize = 28f; letterSpacing = -0.01f })
+        col.addView(hint("Patch your own Unity games — on your phone", cOnVariant()).apply { textSize = 13f })
         row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        return row
+        outer.addView(row)
+        // Status pill
+        val pill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = pillDrawable(cCardBg(), 28)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        statusText = hint(st.status, cOnSurface()).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END; textSize = 14f }
+        pill.addView(tv("●  ", MR.style.TextAppearance_Material3_BodyMedium).apply { setTextColor(cSuccess().toInt()) })
+        pill.addView(statusText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        outer.addView(pill, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(14) })
+        return outer
     }
     private fun buildUi(): View {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -370,15 +416,23 @@ class MainActivity : AppCompatActivity() {
         val frame = FrameLayout(this)
         pages.forEach { frame.addView(it, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)) }
         root.addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        // Floating pill bottom nav (Obtainium / Morphe style): floats above content,
+        // rounded 32dp, soft shadow. Selected tab gets indigo pill highlight via theme.
         nav = BottomNavigationView(this).apply {
             inflateMenu(R.menu.nav)
             labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
+            background = pillDrawable(cNavBg(), 32)
+            elevation = dp(8).toFloat()
             setOnItemSelectedListener { item ->
                 val i = navIds.indexOf(item.itemId)
                 if (i >= 0 && i != curPage) go(i); true
             }
         }
-        root.addView(nav, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        val navWrap = FrameLayout(this).apply {
+            setPadding(dp(16), dp(4), dp(16), dp(12))
+            addView(nav, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        }
+        root.addView(navWrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         go(0, false); refreshHint(); return root
     }
     private fun go(i: Int, animate: Boolean = true) {
