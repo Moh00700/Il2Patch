@@ -13,23 +13,23 @@ import androidx.annotation.ColorInt
  */
 object Il2PatchColors {
     // ---- Brand / Primary ----
-    @ColorInt const val PRIMARY_LIGHT: Int = 0xFF6750A4.toInt()
-    @ColorInt const val PRIMARY_DARK: Int = 0xFFD0BCFF.toInt()
-    @ColorInt const val PRIMARY_CONTAINER_LIGHT: Int = 0xFFEADDFF.toInt()
-    @ColorInt const val PRIMARY_CONTAINER_DARK: Int = 0xFF4F378B.toInt()
+    @ColorInt const val PRIMARY_LIGHT: Int = 0xFF4A44D6.toInt()
+    @ColorInt const val PRIMARY_DARK: Int = 0xFFB8B2FF.toInt()
+    @ColorInt const val PRIMARY_CONTAINER_LIGHT: Int = 0xFFE8E0FF.toInt()
+    @ColorInt const val PRIMARY_CONTAINER_DARK: Int = 0xFF3B2FC9.toInt()
     @ColorInt const val ON_PRIMARY_LIGHT: Int = 0xFFFFFFFF.toInt()
     @ColorInt const val ON_PRIMARY_DARK: Int = 0xFF381E72.toInt()
 
     // ---- Surface ----
-    @ColorInt const val SURFACE_LIGHT: Int = 0xFFFFFBFE.toInt()
-    @ColorInt const val SURFACE_DARK: Int = 0xFF1C1B1F.toInt()
-    @ColorInt const val SURFACE_VARIANT_LIGHT: Int = 0xFFE7E0EC.toInt()
-    @ColorInt const val SURFACE_VARIANT_DARK: Int = 0xFF49454F.toInt()
-    @ColorInt const val ON_SURFACE_LIGHT: Int = 0xFF1C1B1F.toInt()
+    @ColorInt const val SURFACE_LIGHT: Int = 0xFFFFFFFF.toInt()
+    @ColorInt const val SURFACE_DARK: Int = 0xFF121216.toInt()
+    @ColorInt const val SURFACE_VARIANT_LIGHT: Int = 0xFFF2F0FA.toInt()
+    @ColorInt const val SURFACE_VARIANT_DARK: Int = 0xFF2A2A33.toInt()
+    @ColorInt const val ON_SURFACE_LIGHT: Int = 0xFF121216.toInt()
     @ColorInt const val ON_SURFACE_DARK: Int = 0xFFE6E0E9.toInt()
 
     // ---- Status: Green = patched / success, Amber = warning, Red = error ----
-    @ColorInt const val SUCCESS_LIGHT: Int = 0xFF1E8E3E.toInt()
+    @ColorInt const val SUCCESS_LIGHT: Int = 0xFF1E8E5A.toInt()
     @ColorInt const val SUCCESS_DARK: Int = 0xFF81C995.toInt()
     @ColorInt const val WARNING_LIGHT: Int = 0xFFB06000.toInt()
     @ColorInt const val WARNING_DARK: Int = 0xFFFFC46B.toInt()
