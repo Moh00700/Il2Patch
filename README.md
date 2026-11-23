@@ -1,15 +1,12 @@
-<p align="center">
-  <img src="docs/images/icon.png" width="200" alt="Il2Patch logo">
-</p>
+<div align="center">
 
-<h1 align="center">Il2Patch</h1>
+<img src="docs/images/icon.png" width="150" alt="Il2Patch logo">
 
-<p align="center">
-  <b>A hex / assembly patcher for <code>libil2cpp.so</code>, built for offline Unity games you own.</b><br>
+Il2Patch
+
+<b>A hex / assembly patcher for <code>libil2cpp.so</code>, built for offline Unity games you own.</b><br>
   Open the file, find the function you want, patch it, save. All on your phone.
-</p>
 
-<p align="center">
   <img src="https://img.shields.io/badge/license-personal_use-blue" alt="license personal use">
   <img src="https://img.shields.io/badge/platform-Android-green?logo=android" alt="platform Android">
   <br>
@@ -19,7 +16,6 @@
   <img src="https://img.shields.io/badge/IL2CPP_metadata-24--31_%7C_39-orange" alt="IL2CPP metadata 24-31 | 39">
   <br>
   <img src="https://img.shields.io/badge/build-repo_or_workflow_not_found-red" alt="build repo or workflow not found">
-</p>
 
 ---
 
