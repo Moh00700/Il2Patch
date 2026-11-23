@@ -303,7 +303,7 @@ class MainActivity : AppCompatActivity() {
     private fun morpheRow(icon: String, titleText: String, subtitleText: String, actionText: String, gradStart: Int, gradEnd: Int, onClick: () -> Unit): MaterialCardView {
         val iconView = TextView(this).apply {
             text = icon; textSize = 24f; gravity = Gravity.CENTER
-            background = GradientDrawable().apply { setColor((gradStart and 0x00FFFFFF) or 0xFF000000); cornerRadius = dp(16).toFloat() }
+            background = GradientDrawable().apply { setColor((gradStart and 0x00FFFFFF) or 0xFF000000.toInt()); cornerRadius = dp(16).toFloat() }
             // icon circle: solid tinted bg
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
