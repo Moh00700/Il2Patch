@@ -557,8 +557,8 @@ class MainActivity : AppCompatActivity() {
                 arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                 intArrayOf(sel, unsel)
             )
-            itemTextAppearanceActive = R.style.TextAppearance_Material3_LabelMedium
-            itemTextAppearanceInactive = R.style.TextAppearance_Material3_LabelMedium
+            itemTextAppearanceActive = MR.style.TextAppearance_Material3_LabelMedium
+            itemTextAppearanceInactive = MR.style.TextAppearance_Material3_LabelMedium
             elevation = dp(8).toFloat()
             setOnItemSelectedListener { item ->
                 val i = navIds.indexOf(item.itemId)
