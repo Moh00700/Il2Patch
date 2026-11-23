@@ -45,7 +45,7 @@ class Il2PatchApp : Application() {
             get() = instance.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
         /** Shared state for all 5 tabs. */
-        val state = AppState()
+        val state = AppState
     }
 
     override fun onCreate() {
