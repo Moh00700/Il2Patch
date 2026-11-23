@@ -1,47 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
+    <!-- Il2Patch — Modern theme (Obtainium / Morphe style) LIGHT -->
+    <!-- This is what was keeping your app looking old: old purple + grey + square shapes -->
     <style name="Theme.Il2Patch" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/md_primary</item>
-        <item name="colorOnPrimary">@color/md_on_primary</item>
-        <item name="colorPrimaryContainer">@color/md_primary_container</item>
-        <item name="colorOnPrimaryContainer">@color/md_on_primary_container</item>
-        <item name="colorSecondary">@color/md_secondary</item>
-        <item name="colorOnSecondary">@color/md_on_secondary</item>
-        <item name="colorSecondaryContainer">@color/md_secondary_container</item>
-        <item name="colorOnSecondaryContainer">@color/md_on_secondary_container</item>
-        <item name="android:colorBackground">@color/md_background</item>
-        <item name="colorOnBackground">@color/md_on_background</item>
-        <item name="colorSurface">@color/md_surface</item>
-        <item name="colorOnSurface">@color/md_on_surface</item>
-        <item name="colorSurfaceVariant">@color/md_surface_variant</item>
-        <item name="colorOnSurfaceVariant">@color/md_on_surface_variant</item>
-        <item name="colorOutline">@color/md_outline</item>
-        <item name="colorOutlineVariant">@color/md_outline_variant</item>
-        <item name="colorSurfaceContainerLowest">@color/md_surface_container_lowest</item>
-        <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
-        <item name="colorSurfaceContainer">@color/md_surface_container</item>
-        <item name="colorSurfaceContainerHigh">@color/md_surface_container_high</item>
-        <item name="colorSurfaceContainerHighest">@color/md_surface_container_highest</item>
-        <item name="colorError">@color/md_error</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="shapeAppearanceMediumComponent">@style/Shape.Il2Patch.Medium</item>
+        <item name="colorPrimary">@color/il2_primary</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorPrimaryContainer">@color/il2_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/il2_on_surface</item>
+        <item name="colorSecondary">@color/il2_teal</item>
+        <item name="colorSurface">@color/il2_surface_light</item>
+        <item name="colorOnSurface">@color/il2_on_surface</item>
+        <item name="colorSurfaceVariant">@color/il2_card_light</item>
+        <item name="colorOnSurfaceVariant">@color/il2_on_variant_light</item>
+        <item name="colorError">@color/il2_error</item>
+        <item name="android:windowBackground">@color/il2_surface_light</item>
+        <item name="android:statusBarColor">@color/il2_surface_light</item>
+        <item name="android:navigationBarColor">@color/il2_surface_light</item>
+        <!-- Modern shapes: 28dp cards, pill buttons, pill nav -->
         <item name="shapeAppearanceLargeComponent">@style/Shape.Il2Patch.Large</item>
+        <item name="shapeAppearanceMediumComponent">@style/Shape.Il2Patch.Medium</item>
+        <item name="shapeAppearanceSmallComponent">@style/Shape.Il2Patch.Small</item>
+        <item name="materialCardViewStyle">@style/Widget.Il2Patch.Card</item>
+        <item name="materialButtonStyle">@style/Widget.Il2Patch.Button</item>
+        <item name="bottomNavigationStyle">@style/Widget.Il2Patch.BottomNav</item>
     </style>
 
-    <!-- Used to create tonal buttons from code -->
-    <style name="ThemeOverlay.Il2Patch.Tonal" parent="">
-        <item name="materialButtonStyle">@style/Widget.Material3.Button.TonalButton</item>
-    </style>
-
-    <style name="Shape.Il2Patch.Medium" parent="ShapeAppearance.Material3.MediumComponent">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">16dp</item>
-    </style>
     <style name="Shape.Il2Patch.Large" parent="ShapeAppearance.Material3.LargeComponent">
         <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">24dp</item>
+        <item name="cornerSize">28dp</item>
+    </style>
+    <style name="Shape.Il2Patch.Medium" parent="ShapeAppearance.Material3.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">28dp</item>
+    </style>
+    <style name="Shape.Il2Patch.Small" parent="ShapeAppearance.Material3.SmallComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">28dp</item>
     </style>
 
+    <style name="Widget.Il2Patch.Card" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">28dp</item>
+        <item name="cardBackgroundColor">@color/il2_card_light</item>
+        <item name="cardElevation">2dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+    <style name="Widget.Il2Patch.Button" parent="Widget.Material3.Button">
+        <item name="cornerRadius">28dp</item>
+        <item name="android:minHeight">56dp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+    <style name="Widget.Il2Patch.BottomNav" parent="Widget.Material3.BottomNavigationView">
+        <item name="background">@color/white</item>
+        <item name="elevation">8dp</item>
+    </style>
+    <style name="ThemeOverlay.Il2Patch.Tonal" parent="">
+        <item name="materialButtonStyle">@style/Widget.Il2Patch.Button.Tonal</item>
+    </style>
+    <style name="Widget.Il2Patch.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="cornerRadius">28dp</item>
+        <item name="android:minHeight">56dp</item>
+    </style>
 </resources>
