@@ -2,7 +2,7 @@
 
 <img src="docs/images/icon.png" width="150" alt="Il2Patch logo">
 
-<h1>Il2Patch"</h1>
+<p style="font-weight: bold; font-size: 37px;">Il2Patch</p>
 
 ---
 
