@@ -183,14 +183,25 @@ class MainActivity : AppCompatActivity() {
     private fun tv(text: CharSequence, style: Int = MR.style.TextAppearance_Material3_BodyMedium) =
         TextView(this).apply { this.text = text; setTextAppearance(style); typeface = fontBody() }
 
-    private fun title(t: String) = tv(t, MR.style.TextAppearance_Material3_TitleLarge).apply {
-        typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(4)); textSize = 24f; letterSpacing = -0.01f
+    // Morphe style: NO emoji in titles. Titles are clean text, 22sp bold.
+    // Emoji made every card look like a 2018 tutorial app.
+    private fun cleanText(s: String): String {
+        // Strip leading emoji / symbols / numbers like "📂  1 — ", "🔍  ", "1️⃣ "
+        var r = s.trim()
+        // Remove leading non-letter runs (emoji, digits, dashes)
+        while (r.isNotEmpty() && !r[0].isLetter()) r = r.drop(1).trimStart()
+        // Collapse "1 — Open" -> "Open"
+        if (r.length > 2 && r[0].isDigit()) r = r.drop(1).trimStart('—','-',' ').trimStart()
+        return r.ifEmpty { s }
+    }
+    private fun title(t: String) = tv(cleanText(t), MR.style.TextAppearance_Material3_TitleLarge).apply {
+        typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(2)); textSize = 22f; letterSpacing = -0.01f
     }
     private fun subtitle(t: String) = tv(t, MR.style.TextAppearance_Material3_BodyMedium).apply {
-        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); setLineSpacing(0f, 1.15f)
+        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); setLineSpacing(0f, 1.15f); textSize = 14f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END
     }
     // Section header: coloured by location, e.g. "💎  1  FILES" in Find, "✏️  VALUE" in Patch
-    private fun label(t: String, color: Int = cPrimary()) = tv(t.uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
+    private fun label(t: String, color: Int = cPrimary()) = tv(cleanText(t).uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
         typeface = fontTitle(); letterSpacing = 0.12f; setTextColor(color.toInt()); setPadding(dp(4), dp(16), 0, dp(6)); textSize = 13f
     }
     private fun hint(t: String, color: Int = cOnVariant()) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
@@ -200,20 +211,33 @@ class MainActivity : AppCompatActivity() {
     private fun hintWarn(t: String) = hint(t, cWarning())
     private fun hintError(t: String) = hint(t, cError())
 
-    // Explainer card at top of each tab — icon + title + plain-language explanation
+    // Explainer card — Morphe style: title + ONE line. Full text expands on tap.
+    // Long paragraphs on every card are what made it look old.
     private fun explainer(emoji: String, titleText: String, body: String, bg: Int = cPrimaryContainer(), fg: Int = cOnPrimaryContainer()): MaterialCardView {
-        val t = tv("$emoji  $titleText", MR.style.TextAppearance_Material3_TitleMedium).apply {
-            typeface = fontTitle(); setTextColor(fg.toInt())
+        val t = tv(cleanText(titleText), MR.style.TextAppearance_Material3_TitleMedium).apply {
+            typeface = fontTitle(); setTextColor(fg.toInt()); textSize = 20f
         }
-        val b = tv(body, MR.style.TextAppearance_Material3_BodyMedium).apply {
-            typeface = fontBody(); setTextColor(fg.toInt()); setPadding(0, dp(4), 0, 0); setLineSpacing(0f, 1.2f)
+        // Only first sentence shown by default — tap to read more
+        val short = body.substringBefore("\n").substringBefore(". ").let { if (body.contains(". ")) it + "." else it }
+        val b = tv(short, MR.style.TextAppearance_Material3_BodyMedium).apply {
+            typeface = fontBody(); setTextColor(fg.toInt()); setPadding(0, dp(4), 0, 0); setLineSpacing(0f, 1.2f); maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
         }
-        val c = card(t, b)
+        val more = tv("Tap to read more  ▾", MR.style.TextAppearance_Material3_BodySmall).apply {
+            setTextColor(0xFFFFFFFF.toInt()); alpha = 0.8f; setPadding(0, dp(6), 0, 0)
+        }
+        val c = card(t, b, more)
         // Modern hero: gradient in both modes, white text always readable
         c.background = heroGrad()
         c.setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
         t.setTextColor(0xFFFFFFFF.toInt()); b.setTextColor(0xFFFFFFFF.toInt())
         c.cardElevation = dp(4).toFloat()
+        var expanded = false
+        c.setOnClickListener {
+            expanded = !expanded
+            if (expanded) { b.text = body; b.maxLines = Int.MAX_VALUE; more.text = "Tap to hide  ▴" }
+            else { b.text = short; b.maxLines = 2; more.text = "Tap to read more  ▾" }
+        }
         return c
     }
 
@@ -263,7 +287,7 @@ class MainActivity : AppCompatActivity() {
     private fun card(vararg children: View): MaterialCardView {
         val c = MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle)
         val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(18), dp(20), dp(18))
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(16), dp(20), dp(16))
         }
         children.forEach { col.addView(it) }
         c.addView(col); c.radius = dp(28).toFloat()
@@ -388,7 +412,7 @@ class MainActivity : AppCompatActivity() {
         row.addView(logo, LinearLayout.LayoutParams(dp(52), dp(52)))
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0) }
         col.addView(tv("Il2Patch", MR.style.TextAppearance_Material3_TitleLarge).apply { typeface = fontTitle(); setTextColor(cOnSurface().toInt()); textSize = 28f; letterSpacing = -0.01f })
-        col.addView(hint("Patch your own Unity games — on your phone", cOnVariant()).apply { textSize = 13f })
+        col.addView(hint("Patch your own Unity games", cOnVariant()).apply { textSize = 13f })
         row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         outer.addView(row)
         // Status pill
@@ -479,11 +503,11 @@ class MainActivity : AppCompatActivity() {
             typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer().toInt())
         }
         val hero = explainer("🚀", "Patch a game in 3 steps",
-            "1️⃣ Open your file  •  2️⃣ Find the function in Find  •  3️⃣ Patch it & Save.\nYou never need a PC — everything runs on your phone.")
+            "Open your file • Find the function • Patch & Save. No PC needed — everything runs on your phone.")
         infoText = hint("No file open.", cOnVariant()).apply { setPadding(0, dp(12), 0, 0) }
         val src = card(
             title("📂  1 — Open your file"),
-            subtitle("Pick a libil2cpp.so, any ELF .so, or an APK. If you pick an APK, you'll choose which .so inside it to patch."),
+            subtitle("Pick libil2cpp.so, any ELF .so, or an APK."),
             btn("Open .so or .apk") { pickFile() }.top(12), infoText)
         val save = card(
             title("💾  Save"),
@@ -508,7 +532,7 @@ class MainActivity : AppCompatActivity() {
             includeAllSwitch).apply { visibility = View.GONE }
         val files = card(
             title("🗂️  Metadata"),
-            subtitle("global-metadata.dat tells the app the real names of every class & method. Without it, Find can't suggest anything."),
+            subtitle("global-metadata.dat = real names of every class & method. Without it, Find can't suggest."),
             metaText, rowAsym(btn("Pick metadata file", 1) { pickMeta() }, btn("Advanced", 2) { toggle(adv) }), adv)
         sumText = tv(summaryLine(), MR.style.TextAppearance_Material3_BodyLarge).apply { typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()) }
         dumpSummary = hint(if (st.dumpReport.isEmpty()) "" else st.dumpReport).apply {
@@ -541,7 +565,7 @@ class MainActivity : AppCompatActivity() {
             row(btn("Suggestions only", 1) { exportSuggestions() }, btn("Everything", 1) { exportJson() }))
         val pg = page(
             explainer("🔎", "Find — what to patch",
-                "🎯 READ THIS FIRST: This tab finds functions by their NAME. Green text = what the patch will do. Tap Apply fix to patch at once, or Edit to check it in Patch first."),
+                "Find functions by NAME. Green = what the patch does. Apply fix patches at once, Edit checks it in Patch first."),
             label("🗂️  1  FILES", cPrimary()), files,
             label("🔍  2  SCAN", cSuccess()), run,
             label("✅  3  FIX", cSuccess()),
