@@ -663,19 +663,59 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { onClick() }
             }
         }
-        val metaSub = if (st.metaName.isEmpty()) "Pick global-metadata.dat" else st.metaName
-        // libil2cpp.so row is back — title has NO "Import" word in it, button is "Import" like the metadata row
-        val libRow = mockupRow("⬇️", "libil2cpp.so", "Pick libil2cpp.so or the game APK", "Import") { pickFile() }
+        val metaSub = if (st.metaName.isEmpty()) "Game metadata file" else st.metaName
+        // Mockup subtitles: short + honest. File name replaces the subtitle once picked.
+        val libSub = if (st.srcName.isEmpty()) "Native code library" else st.srcName
+        val libRow = mockupRow("⬇️", "libil2cpp.so", libSub, "Import") { pickFile() }
         // Was "Metadata / Edit" — now the real file name + Import button
         val metaRow = mockupRow("🗂️", "global-metadata.dat", metaSub, "Import") { pickMeta() }
         // Save row removed — patches auto-save via the Direct-mode switch below.
-        val undoRow = morpheRow("↩️", "Undo last change", "Removes the last patch", "Undo", 0xFFB3261E.toInt(), 0xFF0D9488.toInt()) { undo(false) }
-        // Log on Start: shows "Loaded libil2cpp.so" AND "Metadata loaded: ..." the same way,
-        // because both finishLoad() and the metadata import call log().
-        logText = tv(if (st.log.isEmpty()) "Nothing yet." else st.log, MR.style.TextAppearance_Material3_BodySmall).apply {
-            typeface = fontMono(); textSize = 11f; setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
+        val undoRow = morpheRow("↩️", "Undo last change", "Revert to previous state", "Undo", 0xFFB3261E.toInt(), 0xFF0D9488.toInt()) { undo(false) }
+        // ---- HERO back — exactly the old mockup: gradient card + 3 shortcut pills ----
+        val heroTitle = tv("Patch a game in 3 steps", MR.style.TextAppearance_Material3_TitleLarge).apply {
+            typeface = fontTitle(); setTextColor(0xFFFFFFFF.toInt()); textSize = 26f; letterSpacing = -0.01f
         }
-        val logCard = card(title("📜  Log"), subtitle("What the app did last — imports, patches, errors."), logText)
+        val heroSub = tv("Import \u2022 Configure \u2022 Build & Export", MR.style.TextAppearance_Material3_BodyMedium).apply {
+            typeface = fontBodyMedium(); setTextColor(0xFFFFFFFF.toInt()); alpha = 0.95f; textSize = 14f
+            setPadding(0, dp(6), 0, dp(12))
+        }
+        fun heroPill(text: String, onClick: () -> Unit): MaterialButton {
+            return MaterialButton(this).apply {
+                this.text = text; isAllCaps = false; typeface = fontBodyMedium(); textSize = 11f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+                cornerRadius = dp(16); minimumHeight = dp(32)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(0x55000000.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(dp(10), 0, dp(10), 0)
+                setOnClickListener { onClick() }
+            }
+        }
+        val pills = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(heroPill("\u2b07  Import") { pickFile() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(heroPill("\u2699  Configure") { go(1) }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
+            addView(heroPill("\u2630  Build & Export") { buildApk() }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
+        }
+        val heroCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(20))
+            addView(heroTitle); addView(heroSub); addView(pills)
+        }
+        val hero = MaterialCardView(this, null, MR.attr.materialCardViewFilledStyle).apply {
+            addView(heroCol); radius = dp(24).toFloat()
+            background = heroGrad(); setCardBackgroundColor(android.graphics.Color.TRANSPARENT)
+            cardElevation = dp(4).toFloat(); strokeWidth = 0
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
+        }
+        // Log on Start — QUIET: plain text under the rows, not a big card.
+        // st.log is newest-first, so maxLines = 3 shows the last 3 actions.
+        logText = tv(if (st.log.isEmpty()) "Nothing yet." else st.log, MR.style.TextAppearance_Material3_BodySmall).apply {
+            typeface = fontMono(); textSize = 11f; maxLines = 3; ellipsize = TextUtils.TruncateAt.END
+            setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
+        }
+        val logCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(8), dp(4), 0)
+            addView(hint("📜  Log", cOnVariant()).apply { textSize = 12f })
+            addView(logText.apply { setPadding(0, dp(4), 0, 0) })
+        }
         val statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), 0)
             addView(infoText)
@@ -686,7 +726,7 @@ class MainActivity : AppCompatActivity() {
                 addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(16) })
             })
         }
-        return page(libRow, metaRow, undoRow, statusRow, logCard)
+        return page(hero, libRow, metaRow, undoRow, statusRow, logCard)
     }
 
     private fun findPage(): ScrollView {
