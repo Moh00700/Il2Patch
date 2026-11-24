@@ -390,7 +390,7 @@ class MainActivity : AppCompatActivity() {
     // GemsView, and the cards are opaque, so gems only peek through the gaps
     // between cards. Dim (alpha ~30%), few (~12), slow (~12-15s top->bottom).
     private inner class GemsView(context: android.content.Context) : View(context) {
-        private data class Gem(var x: Float, var y: Float, var size: Float, var speed: Float,
+        private class Gem(var x: Float, var y: Float, var size: Float, var speed: Float,
             var sway: Float, var phase: Float, var type: Int, var color: Int, var alpha: Int,
             var rot: Float, var rotSpeed: Float)
         private val gems = ArrayList<Gem>()
