@@ -3,6 +3,9 @@ package com.example.il2patch
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -41,6 +44,8 @@ import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import java.io.BufferedWriter
+import kotlin.math.sin
+import kotlin.random.Random
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -95,6 +100,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var batchResult: TextView
     private lateinit var patternField: Field
     private lateinit var searchResult: TextView
+    private lateinit var gemsView: GemsView
+    private var gemsEnabled = true
     private lateinit var logText: TextView
     private lateinit var metaText: TextView
     private lateinit var sumText: TextView
@@ -377,6 +384,100 @@ class MainActivity : AppCompatActivity() {
     private fun resultSuccess(t: String) = tv(t, MR.style.TextAppearance_Material3_BodySmall).apply {
         typeface = fontMono(); textSize = 12f; setTextIsSelectable(true); setTextColor(cSuccess().toInt())
     }
+    // ---------- FALLING GEMS — background only, Start tab only ----------
+    // Layer order: background colour -> GemsView -> ScrollView (opaque cards on top).
+    // Gems are NEVER drawn over cards/text/tabs: the ScrollView sits on top of
+    // GemsView, and the cards are opaque, so gems only peek through the gaps
+    // between cards. Dim (alpha ~30%), few (~12), slow (~12-15s top->bottom).
+    private inner class GemsView(context: android.content.Context) : View(context) {
+        private data class Gem(var x: Float, var y: Float, var size: Float, var speed: Float,
+            var sway: Float, var phase: Float, var type: Int, var color: Int, var alpha: Int,
+            var rot: Float, var rotSpeed: Float)
+        private val gems = ArrayList<Gem>()
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+        private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f }
+        private var running = false
+        private val tick = object : Runnable {
+            override fun run() {
+                if (!running) return
+                update(); invalidate(); postDelayed(this, 32)
+            }
+        }
+        // 0 = diamond (clear), 1 = coin (gold), 2 = gem purple, 3 = gem teal
+        private val palette = listOf(0xFFE8E8FF.toInt() to 70, 0xFFFFC94D.toInt() to 70, 0xFFB388FF.toInt() to 80, 0xFF5EEAD4.toInt() to 80)
+        private fun spawn(initial: Boolean): Gem {
+            val w = width.coerceAtLeast(1).toFloat(); val h = height.coerceAtLeast(1).toFloat()
+            val (col, al) = palette[Random.nextInt(palette.size)]
+            return Gem(
+                x = Random.nextFloat() * w,
+                y = if (initial) Random.nextFloat() * h else -40f,
+                size = Random.nextFloat() * 10f + 6f, // 6-16dp-ish, small
+                speed = Random.nextFloat() * 0.9f + 0.7f, // slow: ~12-15s to cross screen
+                sway = Random.nextFloat() * 18f + 6f,
+                phase = Random.nextFloat() * 6.28f,
+                type = palette.indexOfFirst { it.first == col },
+                color = col, alpha = al,
+                rot = Random.nextFloat() * 360f, rotSpeed = (Random.nextFloat() - 0.5f) * 1.2f
+            )
+        }
+        private fun ensure() { if (gems.isEmpty() && width > 0) repeat(12) { gems.add(spawn(true)) } }
+        private fun update() {
+            ensure()
+            val h = height.toFloat()
+            gems.forEachIndexed { i, g ->
+                g.y += g.speed; g.rot += g.rotSpeed
+                g.x += sin(g.phase + g.y / 90f) * 0.25f
+                if (g.y > h + 40f) gems[i] = spawn(false)
+            }
+        }
+        fun start() { if (running) return; running = true; ensure(); post(tick) }
+        fun stop() { running = false; removeCallbacks(tick) }
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            ensure()
+            gems.forEach { g ->
+                val twinkle = (0.75f + 0.25f * sin(g.phase + g.y / 60f)).coerceIn(0.5f, 1f)
+                paint.color = g.color; paint.alpha = (g.alpha * twinkle).toInt()
+                canvas.save(); canvas.translate(g.x, g.y); canvas.rotate(g.rot)
+                when (g.type) {
+                    1 -> { // gold coin: circle + inner ring
+                        canvas.drawCircle(0f, 0f, g.size, paint)
+                        stroke.color = 0xFFB8860B.toInt(); stroke.alpha = (g.alpha * twinkle).toInt()
+                        canvas.drawCircle(0f, 0f, g.size * 0.55f, stroke)
+                    }
+                    2, 3 -> { // gem: teardrop / hexagon-ish diamond
+                        val path = Path().apply {
+                            moveTo(0f, -g.size); lineTo(g.size * 0.7f, 0f); lineTo(0f, g.size)
+                            lineTo(-g.size * 0.7f, 0f); close()
+                        }
+                        canvas.drawPath(path, paint)
+                    }
+                    else -> { // diamond: 4-point sparkle
+                        val path = Path().apply {
+                            moveTo(0f, -g.size); lineTo(g.size * 0.35f, -g.size * 0.35f); lineTo(g.size, 0f)
+                            lineTo(g.size * 0.35f, g.size * 0.35f); lineTo(0f, g.size)
+                            lineTo(-g.size * 0.35f, g.size * 0.35f); lineTo(-g.size, 0f)
+                            lineTo(-g.size * 0.35f, -g.size * 0.35f); close()
+                        }
+                        canvas.drawPath(path, paint)
+                    }
+                }
+                canvas.restore()
+            }
+        }
+    }
+    // Wrap a ScrollView page: GemsView BEHIND the scroll content, never on top.
+    private fun gemPage(scroll: ScrollView): View {
+        gemsView = GemsView(this)
+        return FrameLayout(this).apply {
+            setBackgroundColor(if (isNightNow()) 0xFF1E1B2E.toInt() else 0xFFFFFFFF.toInt())
+            addView(gemsView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(scroll, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            // ScrollView itself is transparent so gems show in the gaps; cards stay opaque.
+            scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        }
+    }
+
     private fun page(vararg views: View) = ScrollView(this).apply {
         setBackgroundColor(if (isNightNow()) 0xFF1E1B2E.toInt() else 0xFFFFFFFF.toInt())
         val col = LinearLayout(context).apply {
@@ -540,6 +641,7 @@ class MainActivity : AppCompatActivity() {
             offsetField.asView(), rvaSwitch
         )
         autoSwitch = sw("Write each change straight into the original file", prefs.getBoolean("def_auto", true))
+        gemsEnabled = prefs.getBoolean("gems", true)
         pages = listOf(startPage(), findPage(), patchPage(), settingsPage())
         val frame = FrameLayout(this)
         pages.forEach { frame.addView(it, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)) }
@@ -582,6 +684,11 @@ class MainActivity : AppCompatActivity() {
     }
     private fun go(i: Int, animate: Boolean = true) {
         val old = curPage; curPage = i
+        // Gems: Start only, and only if the Settings toggle is on. Paused elsewhere = 0 battery.
+        if (::gemsView.isInitialized) {
+            if (i == 0 && gemsEnabled) { gemsView.visibility = View.VISIBLE; gemsView.start() }
+            else { gemsView.stop(); gemsView.visibility = View.GONE }
+        }
         pages.forEachIndexed { j, p ->
             if (j == i) { p.visibility = View.VISIBLE; if (animate && j != old) p.enter() }
             else { p.animate().cancel(); p.visibility = View.GONE }
@@ -607,7 +714,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------- START TAB ----------
-    private fun startPage(): ScrollView {
+    private fun startPage(): View {
         hintText = tv("", MR.style.TextAppearance_Material3_BodyLarge).apply {
             typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer().toInt())
         }
@@ -726,7 +833,7 @@ class MainActivity : AppCompatActivity() {
                 addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(16) })
             })
         }
-        return page(hero, libRow, metaRow, undoRow, statusRow, logCard)
+        return gemPage(page(hero, libRow, metaRow, undoRow, statusRow, logCard))
     }
 
     private fun findPage(): ScrollView {
@@ -1091,6 +1198,17 @@ class MainActivity : AppCompatActivity() {
             label("🎯  DEFAULTS", cPrimary()),
             card(title("Patch defaults"), subtitle("These are used when Find / Patch open."),
                 auto, rva, dry),
+            label("✨  EFFECTS", cPrimary()),
+            card(title("Falling gems"), subtitle("Diamonds, coins and gems drift behind the cards on Start only. Never over text or buttons."),
+                sw("Falling gems on Start", prefs.getBoolean("gems", true)).apply {
+                    setOnCheckedChangeListener { _, c ->
+                        prefs.edit().putBoolean("gems", c).apply(); gemsEnabled = c
+                        if (::gemsView.isInitialized) {
+                            if (c && curPage == 0) { gemsView.visibility = View.VISIBLE; gemsView.start() }
+                            else { gemsView.stop(); gemsView.visibility = View.GONE }
+                        }
+                    }
+                }),
             label("🧹  STORAGE", cPrimary()),
             card(title("Clear cache"), subtitle("Clears metadata + APK copies"),
                 btn("Clear cache", 1) { clearCache() }),
@@ -1109,6 +1227,7 @@ class MainActivity : AppCompatActivity() {
             setStatus("Cache cleared."); toast("Cache cleared")
         }
     }
+    override fun onDestroy() { if (::gemsView.isInitialized) gemsView.stop(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt("tab", curPage); outState.putInt("seg", curSeg)
