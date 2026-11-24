@@ -163,7 +163,7 @@ class MainActivity : AppCompatActivity() {
     private fun pillDrawable(color: Int, radiusDp: Int = 28): GradientDrawable =
         GradientDrawable().apply { setColor(color); cornerRadius = dp(radiusDp).toFloat() }
     // Demo: hairline border #3D3D3D + demo gradient teal -> sky -> blue
-    private fun cBorder(): Int = if (isNight()) 0xFF3D3D3D.toInt() else 0xFFE5E5E5.toInt()
+    private fun cBorder(): Int = if (isNight()) 0xFF3D3D3D.toInt() else 0xFFCFCFCF.toInt() // outline must be visible on white too
     private fun demoGradient(radiusDp: Int = 14): GradientDrawable =
         GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2DD4BF.toInt(), 0xFF38BDF8.toInt(), 0xFF3B82F6.toInt())).apply { cornerRadius = dp(radiusDp).toFloat() }
     private fun outlineDrawable(radiusDp: Int = 14): GradientDrawable =
@@ -216,7 +216,7 @@ class MainActivity : AppCompatActivity() {
         // Strip leading emoji / symbols / numbers like "📂  1 — ", "🔍  ", "1️⃣ "
         var r = s.trim()
         // Remove leading non-letter runs (emoji, digits, dashes)
-        while (r.isNotEmpty() && !r[0].isLetter()) r = r.drop(1).trimStart()
+        while (r.isNotEmpty() && (!r[0].isLetter() || r[0] == '\u2139')) r = r.drop(1).trimStart() // ℹ is 'letterlike' so isLetter() keeps it — drop it too
         // Collapse "1 — Open" -> "Open"
         if (r.length > 2 && r[0].isDigit()) r = r.drop(1).trimStart('—','-',' ').trimStart()
         return r.ifEmpty { s }
@@ -610,8 +610,26 @@ class MainActivity : AppCompatActivity() {
         }
         val patchPart = tv("Patch", MR.style.TextAppearance_Material3_TitleLarge).apply {
             typeface = fontTitle(); textSize = 34f; letterSpacing = -0.02f
-            setTextColor(0xFFFFFFFF.toInt()) // Patch always white
+            setTextColor(if (isNightNow()) 0xFFFFFFFF.toInt() else 0xFF1E1B2E.toInt()) // Patch: white on dark bg, near-black on white bg — never white-on-white
         }
+        // App icon LEFT of the title, SAME height as the title text (34sp ≈ 44dp tall).
+        // Loads res/drawable/ic_app_logo.png if you added it (the transparent logo);
+        // otherwise falls back to the launcher icon, otherwise a lavender square — never blank, never crash.
+        val logoView = android.widget.ImageView(this).apply {
+            val logoId = resources.getIdentifier("ic_app_logo", "drawable", packageName)
+                .takeIf { it != 0 }
+                ?: resources.getIdentifier("ic_launcher", "mipmap", packageName).takeIf { it != 0 }
+                ?: 0
+            if (logoId != 0) setImageResource(logoId)
+            else { // fallback: lavender rounded square with Il2 — only shows if no logo file exists
+                background = GradientDrawable().apply {
+                    setColor(0xFFC4B5FD.toInt()); cornerRadius = dp(12).toFloat()
+                }
+            }
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+        }
+        titleRow.addView(logoView, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(10) })
         titleRow.addView(il2Part); titleRow.addView(patchPart)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         col.addView(titleRow)
@@ -775,7 +793,7 @@ class MainActivity : AppCompatActivity() {
                 cornerRadius = dp(14); minimumHeight = dp(40)
                 backgroundTintList = null
                 if (isLib) { background = demoGradient(14); setTextColor(0xFFFFFFFF.toInt()) }
-                else { background = outlineDrawable(14); setTextColor(0xFFE8E8E8.toInt()) }
+                else { background = outlineDrawable(14); setTextColor(cOnSurface().toInt()) } // same text colour as every other button label
                 setPadding(dp(16), 0, dp(16), 0)
                 setOnClickListener { onClick() }
             }
@@ -881,8 +899,8 @@ class MainActivity : AppCompatActivity() {
             subtitle("Save results as JSON so you can share them, compare two versions of a game, or keep a backup of what you found."),
             row(btn("Suggestions", 1) { exportSuggestions() }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, btn("Everything", 1) { exportJson() }.apply { maxLines = 1 }))
         val pg = page(
-            label("🔍  1  SCAN", cSuccess()), run,
-            label("✅  2  FIX", cSuccess()),
+            label("🔍  1  SCAN", cPrimary()), run, // was green cSuccess() — now lavender like EXPORT
+            label("✅  2  FIX", cPrimary()), // was green cSuccess() — now lavender like EXPORT
             subtitle("Tap a category chip to filter. Un-tap it to hide that whole category."),
             chipFlow, filterField.asView(),
             emptyText, sugList.top(0), moreBtn.top(4),
@@ -1194,7 +1212,7 @@ class MainActivity : AppCompatActivity() {
             label("🧹  STORAGE", cPrimary()),
             card(title("Clear cache"), subtitle("Clears metadata + APK copies"),
                 btn("Clear cache", 1) { clearCache() }),
-            label("ℹ️  ABOUT", cPrimary()),
+            label("ABOUT", cPrimary()),
             card(title("Il2Patch"), subtitle("For offline games you own. Patch libil2cpp.so / APKs you own."))
         )
     }
