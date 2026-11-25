@@ -84,7 +84,8 @@ class MainActivity : AppCompatActivity() {
     private val segButtons = ArrayList<MaterialButton>() // Patch Value/Bytes/List/Search — plain chips, NOT a toggle group
     private lateinit var sections: List<View>
     private var curSeg = 0
-    private lateinit var infoText: TextView
+    private lateinit var filesInfoStatus: TextView // beside "Files Info:" — "No Files Loaded." when empty
+    private lateinit var filesInfoBody: LinearLayout // rebuilt by refreshFilesInfo()
     private lateinit var autoSwitch: MaterialSwitch
     private lateinit var bytesField: Field
     private lateinit var lenField: Field
@@ -101,7 +102,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchResult: TextView
     private lateinit var gemsView: GemsView
     private var gemsEnabled = true
-    private lateinit var logText: TextView
     private lateinit var metaText: TextView
     private lateinit var sumText: TextView
     private lateinit var dumpSummary: TextView
@@ -574,14 +574,43 @@ class MainActivity : AppCompatActivity() {
     private fun ui(block: () -> Unit) { runOnUiThread { block() } }
     private fun show(v: TextView, s: String) { runOnUiThread { v.text = s } }
     private fun setStatus(s: String) { st.status = s; runOnUiThread { statusText.text = s } }
-    // Log is stored newest-first, but the File info card shows it OLDEST first,
-    // so it reads in load order: Loaded lib -> File info -> Loaded metadata -> Analysis done...
-    private fun logChronological(): String =
-        if (st.log.isEmpty()) "Nothing yet."
-        else st.log.lines().filter { it.isNotEmpty() }.asReversed().joinToString("\n")
-    private fun log(msg: String) {
-        st.log = (msg + "\n" + st.log).take(20000)
-        runOnUiThread { if (::logText.isInitialized) logText.text = logChronological() }
+    private fun log(msg: String) { st.log = (msg + "\n" + st.log).take(20000) } // kept in memory; Files Info card shows the structured version
+    // ---------- FILES INFO card (Start, under Undo all) ----------
+    // Exact layout, in order:
+    //   Files Info: [No Files Loaded. if empty]
+    //   Loaded libil2cpp.so  (bold)
+    //   <bytes> bytes
+    //   ELF ... / Not an ELF file...
+    //   <blank> <blank>
+    //   Loaded global-metadata.dat  (bold)
+    //   Analysis done: <methods> methods, <suggestions> suggestions
+    // Nothing else lives in this card — no raw log, no mode line.
+    private fun filesInfoLine(text: String, bold: Boolean): TextView =
+        tv(text, MR.style.TextAppearance_Material3_BodyLarge).apply {
+            typeface = if (bold) android.graphics.Typeface.DEFAULT_BOLD else fontBody()
+            setTextColor(if (bold) cOnSurface().toInt() else cOnVariant().toInt())
+        }
+    private fun refreshFilesInfo() {
+        if (!::filesInfoBody.isInitialized) return
+        filesInfoBody.removeAllViews()
+        val hasLib = st.patcher != null
+        val hasMeta = st.metaFile != null
+        filesInfoStatus.text = if (!hasLib && !hasMeta) "No Files Loaded." else ""
+        filesInfoStatus.visibility = if (!hasLib && !hasMeta) View.VISIBLE else View.GONE
+        if (hasLib) {
+            val label = if (st.apkFile != null) (st.apkEntry ?: "libil2cpp.so") else st.srcName.ifEmpty { "libil2cpp.so" }
+            filesInfoBody.addView(filesInfoLine("Loaded $label", true))
+            filesInfoBody.addView(filesInfoLine("${st.patcher!!.size()} bytes", false))
+            val e = st.elf
+            filesInfoBody.addView(filesInfoLine(if (e == null) "Not an ELF file (raw hex editing only)" else "ELF ${e.archName()}, ${e.segments.size} loadable segments", false))
+        }
+        if (hasMeta) {
+            if (hasLib) { repeat(2) { filesInfoBody.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(9)) }) } } // 2 spaces
+            filesInfoBody.addView(filesInfoLine("Loaded global-metadata.dat", true))
+            val d = st.dump
+            if (d != null) filesInfoBody.addView(filesInfoLine("Analysis done: ${d.resolvedMethods} methods, ${st.suggestions.size} suggestions", false))
+            else filesInfoBody.addView(filesInfoLine("Analysis not run yet.", false))
+        }
     }
     private fun bg(block: () -> Unit) {
         runOnUiThread { busy++; progress.visibility = View.VISIBLE }
@@ -784,7 +813,6 @@ class MainActivity : AppCompatActivity() {
         hintText = tv("", MR.style.TextAppearance_Material3_BodyLarge).apply {
             typeface = fontBodyMedium(); setTextColor(cOnPrimaryContainer().toInt())
         }
-        infoText = hint("No file open.", cOnVariant()).apply { setPadding(0, dp(4), 0, 0) }
         // ---- METADATA ROW — exactly mockup: icon square + title + subtitle + gradient Edit pill ----
         fun mockupRow(icon: String, titleText: String, subtitleText: String, actionText: String, onClick: () -> Unit): MaterialCardView {
             // Demo: line glyph in a tinted square. lib = lavender code glyph, meta = blue database glyph
@@ -849,19 +877,18 @@ class MainActivity : AppCompatActivity() {
         val undoRow = morpheRow("↩", "Undo last change", "Revert to previous state", "Undo", 0xFFB3261E.toInt(), 0xFF0D9488.toInt()) { undo(false) }
         // Undo all: its OWN card under Undo last change (not a small button under the file info anymore)
         val undoAllRow = morpheRow("↺", "Undo all changes", "Revert every patch this session", "Undo all", 0xFFB3261E.toInt(), 0xFF7F1D1D.toInt()) { undo(true) }
-        // ONE card under Undo all changes: File info + Log together, in load order.
-        // Loaded libil2cpp.so (log) -> File info (size / ELF) -> Loaded global-metadata.dat (log)
-        // -> Analysis done... (log). Direct mode line is gone (see finishLoad).
-        logText = tv(logChronological(), MR.style.TextAppearance_Material3_BodySmall).apply {
-            typeface = fontMono(); textSize = 11f; maxLines = 12; ellipsize = TextUtils.TruncateAt.END
-            setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
+        // ONE card under Undo all changes: Files Info, structured, in load order.
+        filesInfoStatus = tv("", MR.style.TextAppearance_Material3_BodyLarge).apply {
+            typeface = fontBodyMedium(); setTextColor(cOnVariant().toInt()); setPadding(dp(8), 0, 0, 0)
         }
-        val infoCard = card(
-            title("📄  File info"),
-            subtitle("What is loaded, in order."),
-            infoText.top(4),
-            hint("📜  Log", cOnVariant()).top(8),
-            logText.top(4))
+        filesInfoBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val filesInfoHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(title("Files Info:"))
+            addView(filesInfoStatus)
+        }
+        val infoCard = card(filesInfoHeader, filesInfoBody.top(8))
+        refreshFilesInfo() // empty state shows "Files Info:  No Files Loaded."
         return page(libRow, metaRow, undoRow, undoAllRow, infoCard)
     }
 
@@ -1023,7 +1050,7 @@ class MainActivity : AppCompatActivity() {
             var mf = st.metaFile; val apk = st.apkFile
             if (mf == null && apk != null) {
                 mf = extractMetaFromApk(apk)
-                if (mf != null) { st.metaFile = mf; st.metaName = "global-metadata.dat (from the APK)"; ui { metaText.text = "Metadata: ${st.metaName}" } }
+                if (mf != null) { st.metaFile = mf; st.metaName = "global-metadata.dat (from the APK)"; ui { metaText.text = "Metadata: ${st.metaName}"; refreshFilesInfo() } }
             }
             if (mf == null) { toast("Pick global-metadata.dat first"); return@bg }
             var an: Il2CppAnalyzer? = null
@@ -1035,7 +1062,7 @@ class MainActivity : AppCompatActivity() {
                 st.dumpReport = "Done.\n" + an.diag.toString()
                 setStatus("Analysis done: ${an.resolvedMethods} methods")
                 log("Analysis done: ${an.resolvedMethods} methods, ${sg.size} suggestions")
-                ui { sumText.text = summaryLine(); dumpSummary.text = st.dumpReport; sugLimit = 30; renderSuggestions(); refreshHint() }
+                ui { sumText.text = summaryLine(); dumpSummary.text = st.dumpReport; sugLimit = 30; renderSuggestions(); refreshHint(); refreshFilesInfo() }
             } catch (e: Exception) {
                 val rep = "Analysis failed:\n" + (e.message ?: e.toString()) + "\n\n" + (an?.diag ?: "")
                 st.dumpReport = rep; setStatus("Analysis failed"); log(rep); an?.close()
@@ -1236,7 +1263,7 @@ class MainActivity : AppCompatActivity() {
             st.dump?.close(); st.dump = null; st.suggestions = emptyList(); st.dumpReport = ""; st.metaFile?.delete(); st.metaFile = null; st.metaName = ""
             filesDir.listFiles { f -> f.name.startsWith("meta_") }?.forEach { it.delete() }
             File(cacheDir, "input.apk").delete(); File(cacheDir, "signed.apk").delete()
-            ui { metaText.text = "APK: found automatically. For a plain .so, pick global-metadata.dat."; sumText.text = summaryLine(); dumpSummary.text = ""; renderSuggestions() }
+            ui { metaText.text = "APK: found automatically. For a plain .so, pick global-metadata.dat."; sumText.text = summaryLine(); dumpSummary.text = ""; renderSuggestions(); refreshFilesInfo() }
             setStatus("Cache cleared."); toast("Cache cleared")
         }
     }
@@ -1254,7 +1281,7 @@ class MainActivity : AppCompatActivity() {
         outState.putString("r3", batchResult.text.toString()); outState.putString("r4", searchResult.text.toString())
     }
     private fun restore(b: Bundle?) {
-        infoText.text = if (st.info.isEmpty()) "No file open." else st.info
+        refreshFilesInfo()
         dumpSummary.text = st.dumpReport; refreshHint(); if (b == null) return
         offsetField.text = b.getString("off") ?: ""; bytesField.text = b.getString("bytes") ?: ""
         lenField.text = b.getString("len") ?: "64"; valueField.text = b.getString("value") ?: ""
@@ -1319,7 +1346,7 @@ class MainActivity : AppCompatActivity() {
                 contentResolver.openInputStream(uri)!!.use { i -> FileOutputStream(f).use { o -> copyStream(i, o, "Loading metadata") } }
                 if (old != null && old != f) old.delete()
                 st.metaFile = f; st.metaName = name
-                ui { metaText.text = "Metadata: $name (${f.length()} bytes)" }; setStatus("Metadata loaded: $name"); log("Metadata loaded: $name")
+                ui { metaText.text = "Metadata: $name (${f.length()} bytes)"; refreshFilesInfo() }; setStatus("Metadata loaded: $name"); log("Metadata loaded: $name")
             }
             REQ_SAVE_SUGG -> {
                 val an = st.dump ?: return; val sg = st.suggestions
@@ -1391,9 +1418,7 @@ class MainActivity : AppCompatActivity() {
         val p = Patcher(work); st.patcher = p
         val e = ElfInfo.parse(work); st.elf = e
         val desc = if (e == null) "Not an ELF file (raw hex editing only)" else "ELF ${e.archName()}, ${e.segments.size} loadable segments"
-        val mode = if (st.apkFile != null) "APK mode: use 'Build patched APK' to save" else ""
-        st.info = if (mode.isEmpty()) "$label\n${p.size()} bytes\n$desc" else "$label\n${p.size()} bytes\n$desc\n$mode"
-        ui { infoText.text = st.info; patchResult.text = "Nothing yet."; refreshHint() }
+        ui { patchResult.text = "Nothing yet."; refreshHint(); refreshFilesInfo() }
         setStatus("Ready: $label"); log("Loaded $label")
     }
 
