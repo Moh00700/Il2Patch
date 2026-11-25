@@ -29,7 +29,6 @@ import android.widget.LinearLayout
 import android.widget.HorizontalScrollView
 import android.widget.ScrollView
 import android.widget.TextView
-import com.google.android.material.button.MaterialButtonToggleGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.R as MR
@@ -82,8 +81,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var targetCard: MaterialCardView
     private lateinit var offsetField: Field
     private lateinit var rvaSwitch: MaterialSwitch
-    private lateinit var segGroup: MaterialButtonToggleGroup
-    private val segIds = ArrayList<Int>()
+    private val segButtons = ArrayList<MaterialButton>() // Patch Value/Bytes/List/Search — plain chips, NOT a toggle group
     private lateinit var sections: List<View>
     private var curSeg = 0
     private lateinit var infoText: TextView
@@ -91,8 +89,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bytesField: Field
     private lateinit var lenField: Field
     private lateinit var patchResult: TextView
-    private lateinit var typeGroup: MaterialButtonToggleGroup
-    private val typeIds = ArrayList<Int>()
+    private val typeButtons = ArrayList<MaterialButton>() // Patch long/int/bool/float/double — plain chips
+    private var curType = 0
     private val types = listOf("long", "int", "bool", "float", "double")
     private lateinit var valueField: Field
     private lateinit var returnResult: TextView
@@ -108,8 +106,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sumText: TextView
     private lateinit var dumpSummary: TextView
     private lateinit var includeAllSwitch: MaterialSwitch
-    private lateinit var catGroup: MaterialButtonToggleGroup
-    private val catIds = ArrayList<Int>()
+    // (catGroup removed — Find chips are plain buttons now, selection lives in selectedCats)
     private val cats = listOf(
         "Resources", "Ads", "Premium", "Unlocks", "Timers", "Tutorial", "Achievements", "God Mode", "Damage",
         "Stats", "Weapons", "Movement", "Enemy", "Map", "Save", "Shop", "Daily", "Settings", "Vehicle", "Bars"
@@ -305,50 +302,48 @@ class MainActivity : AppCompatActivity() {
         addView(main, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         addView(side, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
     }
-    // Shared segment style — Patch Value/Bytes/List/Search AND Find category chips use this,
-    // so they look identical: 48dp tall, 24dp corners, 13sp, inside a pill container.
-    private fun segContainerBg(): GradientDrawable =
-        pillDrawable(if (isNightNow()) 0xFF3D3D3D.toInt() else 0xFFE8E0FF.toInt(), 28)
+    // ONE chip look everywhere: selected = demo gradient (teal -> sky -> blue),
+    // unselected = transparent + hairline outline. Same painter for Find categories,
+    // Patch Value/Bytes/List/Search, and Patch long/int/bool/float/double.
+    // (MaterialButtonToggleGroup is NOT used anymore — it forces a joined pill bar
+    // with dividers and its own checked colour, which is why Patch never matched Find.)
+    private fun paintSingleChip(b: MaterialButton, selected: Boolean) {
+        if (selected) { b.backgroundTintList = null; b.background = demoGradient(24); b.setTextColor(0xFFFFFFFF.toInt()) }
+        else { b.backgroundTintList = android.content.res.ColorStateList.valueOf(0x00000000.toInt()); b.background = outlineDrawable(24); b.setTextColor(if (isNightNow()) 0xFFE8E8E8.toInt() else 0xFF1E1B2E.toInt()) }
+    }
+    // One horizontal swipeable row of separate chips, each sized to its label.
+    private fun singleChipRow(labels: List<String>, buttons: ArrayList<MaterialButton>, initial: Int, onPick: (Int) -> Unit, topMargin: Int = 4): View {
+        buttons.clear()
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        labels.forEachIndexed { idx, label ->
+            val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
+            b.id = View.generateViewId(); b.text = label; b.isAllCaps = false; b.isCheckable = true
+            b.typeface = fontBodyMedium(); styleSegButton(b)
+            b.setPadding(dp(16), 0, dp(16), 0) // breathing room — Find chips use the same padding
+            b.setOnClickListener { onPick(idx) }
+            buttons.add(b)
+            row.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)).apply { if (idx > 0) marginStart = dp(8) })
+        }
+        buttons.forEachIndexed { idx, b -> paintSingleChip(b, idx == initial) }
+        return HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(row, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { this.topMargin = dp(topMargin) }
+        }
+    }
+    private fun selectSeg(i: Int) {
+        curSeg = i
+        segButtons.forEachIndexed { idx, b -> paintSingleChip(b, idx == i) }
+        if (::sections.isInitialized) showSeg(i)
+    }
+    private fun selectType(i: Int) {
+        curType = i
+        typeButtons.forEachIndexed { idx, b -> paintSingleChip(b, idx == i) }
+    }
     private fun styleSegButton(b: MaterialButton) {
         b.cornerRadius = dp(24); b.textSize = 13f; b.isAllCaps = false
         b.minimumWidth = 0; b.minWidth = 0 // MaterialButton's default min-width pushes the last segment (Search) off-screen
         b.setPadding(dp(4), 0, dp(4), 0)
-    }
-    private fun uniformSeg(group: MaterialButtonToggleGroup, topMargin: Int = 4): View {
-        group.orientation = LinearLayout.HORIZONTAL
-        group.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { this.topMargin = dp(topMargin) }
-        for (i in 0 until group.childCount) {
-            val b = group.getChildAt(i)
-            b.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { if (i > 0) marginStart = dp(4) }
-            if (b is MaterialButton) styleSegButton(b)
-        }
-        val wrap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = segContainerBg()
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-            addView(group)
-        }
-        // BUG FIX: wrap had NO layout params, so it defaulted to WRAP_CONTENT — the 4 weighted
-        // buttons overflowed it and the last one (Search) was cut off at the right edge.
-        wrap.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
-        return wrap
-    }
-    private fun segRow(group: MaterialButtonToggleGroup, topMargin: Int = 4): View =
-        scrollChipRow(group, topMargin)
-    // #2 SCROLL ROW (demo): one horizontal swipeable row, chips sized to their label.
-    // Used by: Find categories, Patch Value/Bytes/List/Search, Patch long/int/bool/float/double.
-    private fun scrollChipRow(group: MaterialButtonToggleGroup, topMargin: Int = 4): View {
-        group.orientation = LinearLayout.HORIZONTAL
-        for (i in 0 until group.childCount) {
-            val b = group.getChildAt(i)
-            b.layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)).apply { if (i > 0) marginStart = dp(8) }
-            if (b is MaterialButton) styleSegButton(b)
-        }
-        return HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(group, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { this.topMargin = dp(topMargin) }
-        }
     }
     private fun isUiClass(s: Suggestion): Boolean =
         s.cls.contains("Btn", ignoreCase = true) || s.cls.contains("View", ignoreCase = true)
@@ -579,9 +574,14 @@ class MainActivity : AppCompatActivity() {
     private fun ui(block: () -> Unit) { runOnUiThread { block() } }
     private fun show(v: TextView, s: String) { runOnUiThread { v.text = s } }
     private fun setStatus(s: String) { st.status = s; runOnUiThread { statusText.text = s } }
+    // Log is stored newest-first, but the File info card shows it OLDEST first,
+    // so it reads in load order: Loaded lib -> File info -> Loaded metadata -> Analysis done...
+    private fun logChronological(): String =
+        if (st.log.isEmpty()) "Nothing yet."
+        else st.log.lines().filter { it.isNotEmpty() }.asReversed().joinToString("\n")
     private fun log(msg: String) {
         st.log = (msg + "\n" + st.log).take(20000)
-        runOnUiThread { if (::logText.isInitialized) logText.text = st.log }
+        runOnUiThread { if (::logText.isInitialized) logText.text = logChronological() }
     }
     private fun bg(block: () -> Unit) {
         runOnUiThread { busy++; progress.visibility = View.VISIBLE }
@@ -684,7 +684,10 @@ class MainActivity : AppCompatActivity() {
             subtitle("This is the function every Patch button below will edit. Fill it from Find, or type it by hand."),
             offsetField.asView(), rvaSwitch
         )
-        autoSwitch = sw("Write each change straight into the original file", prefs.getBoolean("def_auto", true))
+        autoSwitch = sw("Write each change straight into the original file", prefs.getBoolean("def_auto", true)).apply {
+            // Lives in Settings > Defaults > Undo Changes now — it saves itself, no duplicate switch.
+            setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("def_auto", c).apply() }
+        }
         gemsEnabled = prefs.getBoolean("gems", true)
         pages = listOf(startPage(), findPage(), patchPage(), settingsPage())
         val frame = FrameLayout(this)
@@ -758,7 +761,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (nav.selectedItemId != navIds[i]) nav.selectedItemId = navIds[i]
     }
-    private fun goPatch(seg: Int) { go(2); segGroup.check(segIds[seg]) }
+    private fun goPatch(seg: Int) { go(2); selectSeg(seg) }
     private fun showSeg(i: Int) {
         curSeg = i
         sections.forEachIndexed { j, s ->
@@ -842,31 +845,24 @@ class MainActivity : AppCompatActivity() {
         val libRow = mockupRow("⟨/⟩", "libil2cpp.so", libSub, "Import") { pickFile() }
         // Was "Metadata / Edit" — now the real file name + Import button
         val metaRow = mockupRow("≣", "global-metadata.dat", metaSub, "Import") { pickMeta() }
-        // Save row removed — patches auto-save via the Direct-mode switch below.
+        // Undo last change STAYS on Start — only the Write-each-change switch moved to Settings.
         val undoRow = morpheRow("↩", "Undo last change", "Revert to previous state", "Undo", 0xFFB3261E.toInt(), 0xFF0D9488.toInt()) { undo(false) }
-        // No top banner on Start any more — the tab opens straight on the libil2cpp.so row.
-        // Log on Start — QUIET: plain text under the rows, not a big card.
-        // st.log is newest-first, so maxLines = 3 shows the last 3 actions.
-        logText = tv(if (st.log.isEmpty()) "Nothing yet." else st.log, MR.style.TextAppearance_Material3_BodySmall).apply {
-            typeface = fontMono(); textSize = 11f; maxLines = 3; ellipsize = TextUtils.TruncateAt.END
+        // Undo all: its OWN card under Undo last change (not a small button under the file info anymore)
+        val undoAllRow = morpheRow("↺", "Undo all changes", "Revert every patch this session", "Undo all", 0xFFB3261E.toInt(), 0xFF7F1D1D.toInt()) { undo(true) }
+        // ONE card under Undo all changes: File info + Log together, in load order.
+        // Loaded libil2cpp.so (log) -> File info (size / ELF) -> Loaded global-metadata.dat (log)
+        // -> Analysis done... (log). Direct mode line is gone (see finishLoad).
+        logText = tv(logChronological(), MR.style.TextAppearance_Material3_BodySmall).apply {
+            typeface = fontMono(); textSize = 11f; maxLines = 12; ellipsize = TextUtils.TruncateAt.END
             setTextIsSelectable(true); setTextColor(cOnVariant().toInt())
         }
-        val logCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(8), dp(4), 0)
-            addView(hint("📜  Log", cOnVariant()).apply { textSize = 12f })
-            addView(logText.apply { setPadding(0, dp(4), 0, 0) })
-        }
-        val statusRow = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(4), dp(4), 0)
-            addView(infoText)
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(16), 0, 0)
-                addView(autoSwitch, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(16) })
-                addView(btn("Undo all", 3) { undo(true) }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(16) })
-            })
-        }
-        return page(libRow, metaRow, undoRow, statusRow, logCard)
+        val infoCard = card(
+            title("📄  File info"),
+            subtitle("What is loaded, in order."),
+            infoText.top(4),
+            hint("📜  Log", cOnVariant()).top(8),
+            logText.top(4))
+        return page(libRow, metaRow, undoRow, undoAllRow, infoCard)
     }
 
     private fun findPage(): ScrollView {
@@ -895,11 +891,7 @@ class MainActivity : AppCompatActivity() {
             b.id = View.generateViewId(); b.isAllCaps = false; b.isCheckable = true; b.isChecked = true
             b.typeface = fontBodyMedium(); styleSegButton(b) // 48dp tall, 24dp corners, 13sp — same as Patch segments
             b.text = "$c • 0" // count updates in renderSuggestions() after Analyze
-            fun paintChip() {
-                // Selected = demo gradient (like Scroll Row #2 in the demo), unselected = outline
-                if (b.isChecked) { b.backgroundTintList = null; b.background = demoGradient(24); b.setTextColor(0xFFFFFFFF.toInt()) }
-                else { b.backgroundTintList = android.content.res.ColorStateList.valueOf(0x00000000.toInt()); b.background = outlineDrawable(24); b.setTextColor(if (isNightNow()) 0xFFE8E8E8.toInt() else 0xFF1E1B2E.toInt()) }
-            }
+            fun paintChip() { paintSingleChip(b, b.isChecked) } // same painter as Patch chips
             b.setOnClickListener {
                 if (b.isChecked) selectedCats.add(c) else selectedCats.remove(c)
                 paintChip()
@@ -907,7 +899,8 @@ class MainActivity : AppCompatActivity() {
             }
             selectedCats.add(c)
             paintChip()
-            chipButtons.add(b); catIds.add(b.id)
+            chipButtons.add(b)
+            b.setPadding(dp(16), 0, dp(16), 0) // same breathing room as Patch chips
             chipRow.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)).apply { if (idx > 0) marginStart = dp(8) })
         }
         val chipFlow = HorizontalScrollView(this).apply {
@@ -943,11 +936,14 @@ class MainActivity : AppCompatActivity() {
         return pg
     }
 
+    // Summary under Analyze: ONE line only — "Finished Analyzing (N Functions)".
+    // Per-category counts already live inside the chips ("Resources • 12"), so the
+    // old "Found 114 resources, 400 ads, ..." wall is gone.
     private fun summaryLine(): String {
         if (st.dump == null) return "Nothing analysed yet."
         val sg = st.suggestions
-        if (sg.isEmpty()) return "Analysis finished, but no matching functions were found."
-        return "Found " + cats.joinToString(", ") { c -> "${sg.count { it.category == c }} ${c.lowercase()}" } + " functions."
+        if (sg.isEmpty()) return "Finished Analyzing (0 Functions) — no matching functions were found."
+        return "Finished Analyzing (${sg.size} Functions)"
     }
     private fun catColor(c: String): Int = Hints.colorFor(c)
     private fun catEmoji(c: String): String = Hints.emojiFor(c)
@@ -1048,15 +1044,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun filteredSuggestions(cat: String? = null): List<Suggestion> {
-        val sel = HashSet<String>()
-        if (chipButtons.isEmpty()) {
-            for (id in catGroup.checkedButtonIds) { val i = catIds.indexOf(id); if (i >= 0) sel.add(cats[i]) }
-        } else sel.addAll(selectedCats)
         val q = filterField.text.trim().lowercase()
-        val sel2 = if (chipButtons.isNotEmpty()) selectedCats else sel
         return st.suggestions.filter {
             it.kind != "noop" &&
-                (if (cat == null) it.category in sel2 else it.category == cat) &&
+                (if (cat == null) it.category in selectedCats else it.category == cat) &&
                 (q.isEmpty() || (it.cls + "." + it.method).lowercase().contains(q))
         }.sortedWith(compareBy({ isUiClass(it) }, { it.category }, { it.cls + "." + it.method }))
     }
@@ -1081,7 +1072,7 @@ class MainActivity : AppCompatActivity() {
         offsetField.text = "%X".format(s.rva); rvaSwitch.isChecked = true
         if (s.kind == "noop") { bytesField.text = "ret"; goPatch(1) }
         else {
-            val i = types.indexOf(s.kind); if (i >= 0) typeGroup.check(typeIds[i])
+            val i = types.indexOf(s.kind); if (i >= 0) selectType(i)
             valueField.text = s.value; goPatch(0)
         }
         toast("Filled in ${s.cls}.${s.method}. Change it if you like, then apply.")
@@ -1114,15 +1105,8 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- PATCH TAB ----------
     private fun patchPage(): ScrollView {
-        typeGroup = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
-        types.forEach { t ->
-            val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
-            b.setPadding(dp(14), 0, dp(14), 0); b.minimumWidth = 0; b.maxLines = 1
-            typeGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
-            typeIds.add(b.id)
-        }
-        typeGroup.check(typeIds[0])
+        // Type chips: separate gradient/outline chips, same as Find categories (no toggle group)
+        val typeRow = singleChipRow(types, typeButtons, curType, { selectType(it) }, 12)
         valueField = Field("Value, e.g. 10000", 1, true,
             "💡 What should the function return? For gems = 999999, for bool = true / false, for price = 0.")
         returnResult = resultText()
@@ -1131,7 +1115,7 @@ class MainActivity : AppCompatActivity() {
                 title("🟢  Make the function return a value"),
                 subtitle("Easiest patch. The function stops running its old code and just returns your value. Best for getters: GetGems, IsPremium, GetHealth."),
                 hint("① Pick the type the function returns (check Find — it says “returns int / bool / float”).  ② Type the value.  ③ Tap Patch function."),
-                segRow(typeGroup, 12), valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
+                typeRow, valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
             card(title("📋  Result"), subtitle("Green = patched. If it says “runs past end”, your address is wrong."), returnResult)
         )
         bytesField = Field("New bytes: hex or assembly", 3, true,
@@ -1175,18 +1159,12 @@ class MainActivity : AppCompatActivity() {
             card(title("🎯  Matches"), searchResult)
         )
         sections = listOf(value, bytes, list, search)
-        segGroup = MaterialButtonToggleGroup(this).apply { isSingleSelection = true; isSelectionRequired = true }
-        listOf("Value", "Bytes", "List", "Search").forEach { t ->
-            val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = t; b.isAllCaps = false; b.typeface = fontBodyMedium()
-            segGroup.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) })
-            segIds.add(b.id)
-        }
+        // Segment chips: separate gradient/outline chips, same as Find categories (no toggle group)
+        val segRowView = singleChipRow(listOf("Value", "Bytes", "List", "Search"), segButtons, curSeg, { selectSeg(it) }, 4)
         targetCard.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(12); bottomMargin = dp(12) }
         val pg = page(
-            scrollChipRow(segGroup, 4), targetCard, *sections.toTypedArray()) // #2 scroll row, not a pill container
-        segGroup.addOnButtonCheckedListener { _, id, checked -> if (checked) showSeg(segIds.indexOf(id)) }
-        segGroup.check(segIds[0]); showSeg(0); return pg
+            segRowView, targetCard, *sections.toTypedArray())
+        selectSeg(curSeg); return pg
     }
 
 
@@ -1203,12 +1181,6 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putInt("night", mode).apply()
                 AppCompatDelegate.setDefaultNightMode(mode)
                 recreate()
-            }
-        }
-        val auto = sw("Write into original file", prefs.getBoolean("def_auto", true)).apply {
-            setOnCheckedChangeListener { _, c ->
-                prefs.edit().putBoolean("def_auto", c).apply()
-                if (::autoSwitch.isInitialized) autoSwitch.isChecked = c
             }
         }
         val rva = sw("Use RVA by default", prefs.getBoolean("def_rva", true)).apply {
@@ -1231,7 +1203,14 @@ class MainActivity : AppCompatActivity() {
                     themeBtn("Light", AppCompatDelegate.MODE_NIGHT_NO))),
             label("🎯  DEFAULTS", cPrimary()),
             card(title("Patch defaults"), subtitle("These are used when Find / Patch open."),
-                auto, rva, dry),
+                rva, dry),
+            // Undo Changes — its own section under Defaults. ONLY the Write-each-change
+            // switch moved here; Undo last change + Undo all stay on Start.
+            label("↩  UNDO CHANGES", cPrimary()),
+            card(title("Undo Changes"),
+                subtitle("How patches are written. Undo buttons stay on Start."),
+                autoSwitch,
+                hint("Write each change straight into the original file — ON = every patch lands immediately, OFF = patches wait in memory until you save.").top(4)),
             label("✨  EFFECTS", cPrimary()),
             card(title("Falling gems"), subtitle("Diamonds, coins and gems drift behind the cards on every tab, top to bottom. Never over text or buttons."),
                 sw("Falling gems on all tabs", prefs.getBoolean("gems", true)).apply {
@@ -1270,7 +1249,7 @@ class MainActivity : AppCompatActivity() {
         outState.putString("batch", batchField.text); outState.putString("pattern", patternField.text)
         outState.putBoolean("rva", rvaSwitch.isChecked); outState.putBoolean("auto", autoSwitch.isChecked)
         outState.putBoolean("dry", dryCheck.isChecked)
-        outState.putInt("type", typeIds.indexOf(typeGroup.checkedButtonId))
+        outState.putInt("type", curType)
         outState.putString("r1", patchResult.text.toString()); outState.putString("r2", returnResult.text.toString())
         outState.putString("r3", batchResult.text.toString()); outState.putString("r4", searchResult.text.toString())
     }
@@ -1282,10 +1261,10 @@ class MainActivity : AppCompatActivity() {
         batchField.text = b.getString("batch") ?: ""; patternField.text = b.getString("pattern") ?: ""
         rvaSwitch.isChecked = b.getBoolean("rva", true); autoSwitch.isChecked = b.getBoolean("auto", true)
         dryCheck.isChecked = b.getBoolean("dry", false)
-        val ti = b.getInt("type", 0); if (ti in typeIds.indices) typeGroup.check(typeIds[ti])
+        val ti = b.getInt("type", 0); if (ti in types.indices) selectType(ti)
         patchResult.text = b.getString("r1") ?: "Nothing yet."; returnResult.text = b.getString("r2") ?: "Nothing yet."
         batchResult.text = b.getString("r3") ?: "Nothing yet."; searchResult.text = b.getString("r4") ?: "Nothing yet."
-        val si = b.getInt("seg", 0); if (si in segIds.indices) segGroup.check(segIds[si])
+        val si = b.getInt("seg", 0); if (si in 0..3) selectSeg(si)
         go(b.getInt("tab", 0).coerceIn(0, 3), false)
     }
 
@@ -1412,8 +1391,8 @@ class MainActivity : AppCompatActivity() {
         val p = Patcher(work); st.patcher = p
         val e = ElfInfo.parse(work); st.elf = e
         val desc = if (e == null) "Not an ELF file (raw hex editing only)" else "ELF ${e.archName()}, ${e.segments.size} loadable segments"
-        val mode = if (st.apkFile != null) "APK mode: use 'Build patched APK' to save" else "Direct mode: changes go into the original file"
-        st.info = "$label\n${p.size()} bytes\n$desc\n$mode"
+        val mode = if (st.apkFile != null) "APK mode: use 'Build patched APK' to save" else ""
+        st.info = if (mode.isEmpty()) "$label\n${p.size()} bytes\n$desc" else "$label\n${p.size()} bytes\n$desc\n$mode"
         ui { infoText.text = st.info; patchResult.text = "Nothing yet."; refreshHint() }
         setStatus("Ready: $label"); log("Loaded $label")
     }
@@ -1435,9 +1414,7 @@ class MainActivity : AppCompatActivity() {
         val old = p.read(off, data.size); p.write(off, data); p.journal.add(Patcher.Rec(off, old, data))
         if (auto) writeThrough(off, data); return old
     }
-    private fun selectedType(): String {
-        val i = typeIds.indexOf(typeGroup.checkedButtonId); return types[if (i < 0) 0 else i]
-    }
+    private fun selectedType(): String = types[curType.coerceIn(types.indices)]
     private fun showPresets() {
         MaterialAlertDialogBuilder(this).setTitle("Presets")
             .setItems(presets.map { it.first }.toTypedArray()) { _, i -> bytesField.text = presets[i].second }
