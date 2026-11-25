@@ -305,28 +305,51 @@ class MainActivity : AppCompatActivity() {
         addView(main, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         addView(side, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) })
     }
+    // Shared segment style — Patch Value/Bytes/List/Search AND Find category chips use this,
+    // so they look identical: 48dp tall, 24dp corners, 13sp, inside a pill container.
+    private fun segContainerBg(): GradientDrawable =
+        pillDrawable(if (isNightNow()) 0xFF3D3D3D.toInt() else 0xFFE8E0FF.toInt(), 28)
+    private fun styleSegButton(b: MaterialButton) {
+        b.cornerRadius = dp(24); b.textSize = 13f; b.isAllCaps = false
+        b.minimumWidth = 0; b.minWidth = 0 // MaterialButton's default min-width pushes the last segment (Search) off-screen
+        b.setPadding(dp(4), 0, dp(4), 0)
+    }
     private fun uniformSeg(group: MaterialButtonToggleGroup, topMargin: Int = 4): View {
         group.orientation = LinearLayout.HORIZONTAL
         group.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { this.topMargin = dp(topMargin) }
         for (i in 0 until group.childCount) {
             val b = group.getChildAt(i)
             b.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { if (i > 0) marginStart = dp(4) }
-            if (b is MaterialButton) { b.cornerRadius = dp(24); b.textSize = 13f; b.isAllCaps = false }
+            if (b is MaterialButton) styleSegButton(b)
         }
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = pillDrawable(if (isNightNow()) 0xFF3D3D3D.toInt() else 0xFFE8E0FF.toInt(), 28)
+            background = segContainerBg()
             setPadding(dp(4), dp(4), dp(4), dp(4))
             addView(group)
         }
+        // BUG FIX: wrap had NO layout params, so it defaulted to WRAP_CONTENT — the 4 weighted
+        // buttons overflowed it and the last one (Search) was cut off at the right edge.
+        wrap.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
         return wrap
     }
     private fun segRow(group: MaterialButtonToggleGroup, topMargin: Int = 4): View =
-        HorizontalScrollView(this).apply {
+        scrollChipRow(group, topMargin)
+    // #2 SCROLL ROW (demo): one horizontal swipeable row, chips sized to their label.
+    // Used by: Find categories, Patch Value/Bytes/List/Search, Patch long/int/bool/float/double.
+    private fun scrollChipRow(group: MaterialButtonToggleGroup, topMargin: Int = 4): View {
+        group.orientation = LinearLayout.HORIZONTAL
+        for (i in 0 until group.childCount) {
+            val b = group.getChildAt(i)
+            b.layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)).apply { if (i > 0) marginStart = dp(8) }
+            if (b is MaterialButton) styleSegButton(b)
+        }
+        return HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(group, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { this.topMargin = dp(topMargin) }
         }
+    }
     private fun isUiClass(s: Suggestion): Boolean =
         s.cls.contains("Btn", ignoreCase = true) || s.cls.contains("View", ignoreCase = true)
     private val selectedCats = mutableSetOf<String>()
@@ -787,13 +810,13 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, dp(8), 0)
                 addView(tV); addView(sV)
             }
-            // Demo: lib row = gradient Import pill, meta row = outline pill (like Analyze in the demo)
+            // BOTH Import buttons identical: same gradient, same white text, same size.
+            // No outline variant — the metadata Import was outline, the lib one was gradient.
             val btn = MaterialButton(this).apply {
                 text = actionText; isAllCaps = false; typeface = fontBodyMedium(); textSize = 14f
                 cornerRadius = dp(14); minimumHeight = dp(40)
                 backgroundTintList = null
-                if (isLib) { background = demoGradient(14); setTextColor(0xFFFFFFFF.toInt()) }
-                else { background = outlineDrawable(14); setTextColor(cOnSurface().toInt()) } // same text colour as every other button label
+                background = demoGradient(14); setTextColor(0xFFFFFFFF.toInt())
                 setPadding(dp(16), 0, dp(16), 0)
                 setOnClickListener { onClick() }
             }
@@ -864,29 +887,33 @@ class MainActivity : AppCompatActivity() {
             btn("Analyze") { doAnalyze() }.top(12), sumText.top(12),
             btn("Advanced", 2) { toggle(adv) }.top(8), adv.top(4),
             btn("Show technical details", 2) { toggle(dumpSummary) }.top(8), dumpSummary.top(8))
-        // Wrapping category chips: 3 per row, NO horizontal scroll — all categories visible
+        // #2 SCROLL ROW: ONE horizontal swipeable row, all 20 categories, count inside each chip.
         selectedCats.clear(); chipButtons.clear()
-        val chipFlow = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        var curRow: LinearLayout? = null
+        val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         cats.forEachIndexed { idx, c ->
-            if (idx % 3 == 0) {
-                curRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                chipFlow.addView(curRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { if (idx > 0) topMargin = dp(8) })
-            }
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
-            b.id = View.generateViewId(); b.text = c; b.isAllCaps = false; b.isCheckable = true; b.isChecked = true
-            b.typeface = fontBodyMedium(); b.cornerRadius = dp(20); b.textSize = 12f
+            b.id = View.generateViewId(); b.isAllCaps = false; b.isCheckable = true; b.isChecked = true
+            b.typeface = fontBodyMedium(); styleSegButton(b) // 48dp tall, 24dp corners, 13sp — same as Patch segments
+            b.text = "$c • 0" // count updates in renderSuggestions() after Analyze
+            fun paintChip() {
+                // Selected = demo gradient (like Scroll Row #2 in the demo), unselected = outline
+                if (b.isChecked) { b.backgroundTintList = null; b.background = demoGradient(24); b.setTextColor(0xFFFFFFFF.toInt()) }
+                else { b.backgroundTintList = android.content.res.ColorStateList.valueOf(0x00000000.toInt()); b.background = outlineDrawable(24); b.setTextColor(if (isNightNow()) 0xFFE8E8E8.toInt() else 0xFF1E1B2E.toInt()) }
+            }
             b.setOnClickListener {
                 if (b.isChecked) selectedCats.add(c) else selectedCats.remove(c)
-                b.backgroundTintList = android.content.res.ColorStateList.valueOf(if (b.isChecked) 0xFF4A44D6.toInt() else 0x00000000.toInt())
-                b.setTextColor(if (b.isChecked) 0xFFFFFFFF.toInt() else if (isNightNow()) 0xFFE8E8E8.toInt() else 0xFF1E1B2E.toInt())
+                paintChip()
                 sugLimit = 30; renderSuggestions()
             }
             selectedCats.add(c)
-            b.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF4A44D6.toInt())
-            b.setTextColor(0xFFFFFFFF.toInt())
+            paintChip()
             chipButtons.add(b); catIds.add(b.id)
-            curRow?.addView(b, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { if (idx % 3 > 0) marginStart = dp(8) })
+            chipRow.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)).apply { if (idx > 0) marginStart = dp(8) })
+        }
+        val chipFlow = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chipRow, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         }
         filterField = Field("Search by name (optional)", 1, false,
             "🔎 Type part of a name, e.g. gem, coins, ad, health. Leave empty to see everything.")
@@ -901,7 +928,7 @@ class MainActivity : AppCompatActivity() {
         val pg = page(
             label("🔍  1  SCAN", cPrimary()), run, // was green cSuccess() — now lavender like EXPORT
             label("✅  2  FIX", cPrimary()), // was green cSuccess() — now lavender like EXPORT
-            subtitle("Tap a category chip to filter. Un-tap it to hide that whole category."),
+            subtitle("Swipe → to see all 20 categories. Tap a chip to filter — the number is how many were found in it."),
             chipFlow, filterField.asView(),
             emptyText, sugList.top(0), moreBtn.top(4),
             btn("Add shown to Batch list", 2) { sendToBatch() }.top(8),
@@ -953,8 +980,15 @@ class MainActivity : AppCompatActivity() {
         val edit = btn("Edit", 2) { applySuggestion(s) }.apply { maxLines = 1 }
         return card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), row(ap, edit))
     }
+    private fun refreshCatChipLabels() {
+        // Count inside each chip: total suggestions found in that category (0 before Analyze)
+        chipButtons.forEachIndexed { idx, b ->
+            if (idx < cats.size) b.text = "${cats[idx]} • ${st.suggestions.count { it.category == cats[idx] }}"
+        }
+    }
     private fun renderSuggestions() {
         if (!::sugList.isInitialized) return
+        refreshCatChipLabels()
         sugList.removeAllViews()
         val list = filteredSuggestions()
         if (list.isEmpty()) {
@@ -1150,7 +1184,7 @@ class MainActivity : AppCompatActivity() {
         }
         targetCard.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(12); bottomMargin = dp(12) }
         val pg = page(
-            uniformSeg(segGroup, 4), targetCard, *sections.toTypedArray())
+            scrollChipRow(segGroup, 4), targetCard, *sections.toTypedArray()) // #2 scroll row, not a pill container
         segGroup.addOnButtonCheckedListener { _, id, checked -> if (checked) showSeg(segIds.indexOf(id)) }
         segGroup.check(segIds[0]); showSeg(0); return pg
     }
