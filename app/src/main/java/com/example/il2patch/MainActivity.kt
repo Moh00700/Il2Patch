@@ -1,5 +1,8 @@
 package com.example.il2patch
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -23,6 +26,8 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.animation.DecelerateInterpolator
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -115,7 +120,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sugList: LinearLayout
     private lateinit var emptyText: TextView
     private lateinit var moreBtn: MaterialButton
-    private var sugLimit = 30
+    private var sugLimit = 10 // 10 shown first, +10 per "Show more" tap
+    // ---------- ALL-12 FEATURES state (all in-memory / prefs / app-private files — no AppState change) ----------
+    private class HistEntry(val off: Long, val old: ByteArray, val new: ByteArray, val label: String, val time: Long = System.currentTimeMillis())
+    private val history = ArrayList<HistEntry>() // 3. patch history, this session
+    private var backupFile: File? = null // 1. auto-backup of the pristine file
+    private var lastPatch: HistEntry? = null // 8. last patch, for Compare
+    private var showFavsOnly = false // 5. Favorites filter
+    private val selectedKeys = LinkedHashSet<String>() // 9. batch selection in Find
+    private val patchedKeys = HashSet<String>() // 11. patched-this-session markers
+    private lateinit var historyList: LinearLayout // Start: patch history rows
+    private lateinit var recentList: LinearLayout // Find: recently patched rows
+    private lateinit var patchSelectedBtn: MaterialButton // Find: "Patch selected (n)"
+    private lateinit var favChip: MaterialButton // Find: Favorites chip
 
     private val presets = listOf(
         "ARM64: return true" to "mov w0, #1; ret",
@@ -222,7 +239,9 @@ class MainActivity : AppCompatActivity() {
         typeface = fontTitle(); setTextColor(cOnSurface().toInt()); setPadding(0, 0, 0, dp(2)); textSize = 22f; letterSpacing = -0.01f
     }
     private fun subtitle(t: String) = tv(t, MR.style.TextAppearance_Material3_BodyMedium).apply {
-        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); setLineSpacing(0f, 1.15f); textSize = 14f; maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+        // NO maxLines / ellipsize — the 2-line cap cut subtitles off mid-sentence, e.g.
+        // "…Best for…" under "Make the function return a value". Subtitles wrap fully now.
+        typeface = fontBody(); setTextColor(cOnVariant().toInt()); setPadding(0, 0, 0, dp(8)); setLineSpacing(0f, 1.15f); textSize = 14f
     }
     // Section header: coloured by location, e.g. "💎  1  FILES" in Find, "✏️  VALUE" in Patch
     private fun label(t: String, color: Int = cPrimary()) = tv(cleanText(t).uppercase(), MR.style.TextAppearance_Material3_LabelLarge).apply {
@@ -377,7 +396,9 @@ class MainActivity : AppCompatActivity() {
             typeface = fontTitle(); setTextColor(cOnSurface().toInt()); textSize = 18f
         }
         val subV = tv(subtitleText, MR.style.TextAppearance_Material3_BodySmall).apply {
-            setTextColor(cOnVariant().toInt()); textSize = 13f; maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+            // NO maxLines=1 / ellipsize here — that clipped "Revert every patch this session"
+            // to "Revert every patch this…" in the Undo all card. Subtitle wraps to 2 lines.
+            setTextColor(cOnVariant().toInt()); textSize = 13f; maxLines = 2
         }
         val mid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -600,18 +621,193 @@ class MainActivity : AppCompatActivity() {
         if (hasLib) {
             val label = if (st.apkFile != null) (st.apkEntry ?: "libil2cpp.so") else st.srcName.ifEmpty { "libil2cpp.so" }
             filesInfoBody.addView(filesInfoLine("Loaded $label", true))
-            filesInfoBody.addView(filesInfoLine("${st.patcher!!.size()} bytes", false))
+            filesInfoBody.addView(filesInfoLine("File Size: %.2f MB".format(st.patcher!!.size() / 1048576.0), false))
             val e = st.elf
             filesInfoBody.addView(filesInfoLine(if (e == null) "Not an ELF file (raw hex editing only)" else "ELF ${e.archName()}, ${e.segments.size} loadable segments", false))
         }
         if (hasMeta) {
             if (hasLib) { repeat(2) { filesInfoBody.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(9)) }) } } // 2 spaces
             filesInfoBody.addView(filesInfoLine("Loaded global-metadata.dat", true))
+            filesInfoBody.addView(filesInfoLine("File Size: %.2f MB".format((st.metaFile?.length() ?: 0L) / 1048576.0), false))
             val d = st.dump
             if (d != null) filesInfoBody.addView(filesInfoLine("Analysis done: ${d.resolvedMethods} methods, ${st.suggestions.size} suggestions", false))
             else filesInfoBody.addView(filesInfoLine("Analysis not run yet.", false))
         }
     }
+
+    // ================= ALL-12 FEATURES helpers =================
+    private fun sugKey(s: Suggestion) = s.cls + "." + s.method + "@0x" + "%X".format(s.rva)
+    private fun favKeys(): MutableSet<String> =
+        (prefs.getString("favs", "") ?: "").split("|||").filter { it.isNotEmpty() }.toMutableSet()
+    private fun saveFavs(keys: Set<String>) { prefs.edit().putString("favs", keys.joinToString("|||")).apply() }
+    private fun copyText(label: String, text: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, text)); toast("Copied: $text")
+    }
+    // 1. Auto-backup: pristine copy the moment a file loads, before any patch can touch it.
+    private fun backupOriginal() {
+        try {
+            val name = (st.srcName.ifEmpty { "libil2cpp.so" }).replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val b = File(filesDir, "backup_$name.bak")
+            if (!b.exists()) { FileInputStream(work).use { i -> FileOutputStream(b).use { o -> copyStream(i, o, "Backing up original") } } }
+            backupFile = b
+        } catch (e: Exception) { log("Backup failed: $e") }
+    }
+    private fun restoreBackup() {
+        val b = backupFile ?: return toast("No backup yet — load a file first")
+        if (!b.exists()) return toast("Backup is gone")
+        bg {
+            FileInputStream(b).use { i -> FileOutputStream(work).use { o -> copyStream(i, o, "Restoring backup") } }
+            st.patcher = Patcher(work); st.patcher?.let { } // fresh patcher, empty journal
+            history.clear(); patchedKeys.clear(); lastPatch = null
+            ui { refreshFilesInfo(); refreshHistory(); renderSuggestions(); refreshRecent() }
+            setStatus("Original restored from backup"); toast("Original file restored")
+        }
+    }
+    // 3. Patch history — one row per patch, each with its own Undo.
+    private fun recordHistory(e: HistEntry) { history.add(e); lastPatch = e; refreshHistory() }
+    private fun refreshHistory() {
+        if (!::historyList.isInitialized) return
+        runOnUiThread { // recordHistory runs inside bg{} — views must only change on the UI thread
+            historyList.removeAllViews()
+            if (history.isEmpty()) {
+                historyList.addView(hint("No patches yet this session."))
+            } else {
+                history.reversed().forEach { e ->
+                    historyList.addView(row(
+                        tv("${e.label}\n0x%X  %s → %s".format(e.off, Hex.fmt(e.old), Hex.fmt(e.new)), MR.style.TextAppearance_Material3_BodySmall).apply { typeface = fontMono(); setTextColor(cOnSurface().toInt()) },
+                        btn("Undo", 2) { undoHistoryEntry(e) }.apply { maxLines = 1 }))
+                }
+            }
+        }
+    }
+    private fun undoHistoryEntry(e: HistEntry) {
+        val p = st.patcher ?: return toast("Open a file first")
+        bg {
+            p.write(e.off, e.old); writeThrough(e.off, e.old)
+            val ji = p.journal.indexOfLast { it.off == e.off }; if (ji >= 0) p.journal.removeAt(ji)
+            history.remove(e)
+            ui { refreshHistory(); renderSuggestions() }
+            setStatus("Undid ${e.label}"); toast("Undid ${e.label}")
+        }
+    }
+    // 6. Recently patched — newest first, max 10, in prefs so it survives rotation.
+    private fun recentEntries(): List<List<String>> =
+        (prefs.getString("recent", "") ?: "").lines().filter { it.isNotEmpty() }.map { it.split("|||") }
+    private fun recordRecent(label: String, rvaHex: String, kind: String, value: String) {
+        val list = recentEntries().toMutableList()
+        list.removeAll { it.getOrNull(1) == rvaHex }
+        list.add(0, listOf(label, rvaHex, kind, value))
+        prefs.edit().putString("recent", list.take(10).joinToString("\n") { it.joinToString("|||") }).apply()
+        refreshRecent()
+    }
+    private fun refreshRecent() {
+        if (!::recentList.isInitialized) return
+        runOnUiThread { // recordRecent runs inside bg{} — views must only change on the UI thread
+            recentList.removeAllViews()
+            val list = recentEntries()
+            if (list.isEmpty()) {
+                recentList.addView(hint("Nothing patched yet."))
+            } else {
+                list.forEach { e ->
+                    val label = e.getOrNull(0) ?: ""; val rvaHex = e.getOrNull(1) ?: ""
+                    val kind = e.getOrNull(2) ?: ""; val value = e.getOrNull(3) ?: ""
+                    recentList.addView(row(
+                        tv(label, MR.style.TextAppearance_Material3_BodyMedium).apply { typeface = fontBodyMedium(); setTextColor(cOnSurface().toInt()) },
+                        btn("Use", 2) {
+                            offsetField.text = rvaHex; rvaSwitch.isChecked = true
+                            val ti = types.indexOf(kind); if (ti >= 0) selectType(ti)
+                            valueField.text = value; goPatch(0)
+                        }.apply { maxLines = 1 }))
+                }
+            }
+        }
+    }
+    // 9. Patch every checked suggestion in Find, one after another.
+    private fun patchSelected() {
+        val p = st.patcher ?: return toast("Open a file first")
+        val chosen = st.suggestions.filter { sugKey(it) in selectedKeys }
+        if (chosen.isEmpty()) return toast("Tick some suggestions first")
+        val auto = autoSwitch.isChecked
+        bg {
+            var done = 0
+            for (s in chosen) {
+                try {
+                    val off = toFileOffset(s.rva, true) ?: continue
+                    val data = Asm.assemble(s.patch(), is64())
+                    if (off < 0 || off + data.size > p.size()) continue
+                    val old = applyOne(p, off, data, auto, s.cls + "." + s.method) // history recorded inside applyOne
+                    recordRecent(s.cls + "." + s.method, "%X".format(s.rva), s.kind, s.value)
+                    patchedKeys.add(sugKey(s)); done++
+                } catch (e: Exception) { log("Patch selected: ${s.method} failed: ${e.message}") }
+            }
+            selectedKeys.clear()
+            ui { renderSuggestions(); refreshRecent() }
+            setStatus("Patched $done selected"); toast("Patched $done function(s)"); log("Patch selected: $done applied")
+        }
+    }
+    // 2. Preview — show old → new WITHOUT writing anything.
+    private fun previewBytes() {
+        val p = st.patcher ?: return toast("Open a file first")
+        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
+        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
+        val data = try { resolveBytes(bytesField.text) } catch (e: Exception) { return toast("Bytes: ${e.message}") }
+        if (off < 0 || off + data.size > p.size()) return toast("Patch runs past the end of the file")
+        val old = p.read(off, data.size)
+        show(patchResult, "Preview — NOT written yet\nfile offset 0x%X\nold: %s\nnew: %s".format(off, Hex.fmt(old), Hex.fmt(data)))
+    }
+    private fun previewValue() {
+        val p = st.patcher ?: return toast("Open a file first")
+        val v = parseHexLong(offsetField.text) ?: return toast("Offset must be hex")
+        val off = toFileOffset(v, rvaSwitch.isChecked) ?: return toast("Address is not inside the file")
+        val type = selectedType(); val valueTxt = valueField.text.trim()
+        val data = try { Asm.returnValue(type, valueTxt, is64()) } catch (e: Exception) { return toast("Value: ${e.message}") }
+        if (off < 0 || off + data.size > p.size()) return toast("Patch runs past the end of the file")
+        val old = p.read(off, data.size)
+        show(returnResult, "Preview — NOT written yet\nFunction would return $type $valueTxt\nold: %s\nnew: %s".format(Hex.fmt(old), Hex.fmt(data)))
+    }
+    // 8. Compare — last patch, old vs new, side by side in a dialog.
+    private fun compareLastPatch() {
+        val e = lastPatch ?: return toast("No patch yet this session")
+        MaterialAlertDialogBuilder(this).setTitle("Compare — ${e.label}")
+            .setMessage("Address: 0x%X\n\nOLD (before):\n%s\n\nNEW (after):\n%s\n\n%s".format(e.off, Hex.fmt(e.old), Hex.fmt(e.new), if (e.old.contentEquals(e.new)) "Identical — nothing actually changed." else "Bytes differ — the patch landed."))
+            .setPositiveButton("OK", null).show()
+    }
+    // 7. Patch profiles per game — the whole Patch-list text saved under a name.
+    private fun profileNames(): List<String> =
+        (prefs.getString("profile_names", "") ?: "").split("|||").filter { it.isNotEmpty() }
+    private fun saveProfile() {
+        val input = EditText(this).apply { hint = "Profile name, e.g. MyGame — gems + no ads" }
+        MaterialAlertDialogBuilder(this).setTitle("Save patch profile").setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) return@setPositiveButton toast("Type a name first")
+                if (batchField.text.isEmpty()) return@setPositiveButton toast("Patch list is empty — nothing to save")
+                val names = (profileNames() + name).distinct()
+                prefs.edit().putString("profile_names", names.joinToString("|||"))
+                    .putString("profile::$name", batchField.text).apply()
+                toast("Profile saved: $name")
+            }.setNegativeButton("Cancel", null).show()
+    }
+    private fun loadProfile() {
+        val names = profileNames()
+        if (names.isEmpty()) return toast("No saved profiles yet")
+        MaterialAlertDialogBuilder(this).setTitle("Load patch profile")
+            .setItems(names.toTypedArray()) { _, i ->
+                val name = names[i]
+                batchField.text = prefs.getString("profile::$name", "") ?: ""
+                goPatch(2); toast("Loaded profile: $name — run Dry run first")
+            }.setNeutralButton("Delete…") { _, _ ->
+                MaterialAlertDialogBuilder(this).setTitle("Delete a profile")
+                    .setItems(names.toTypedArray()) { _, j ->
+                        val name = names[j]
+                        prefs.edit().remove("profile::$name")
+                            .putString("profile_names", (profileNames() - name).joinToString("|||")).apply()
+                        toast("Deleted profile: $name")
+                    }.setNegativeButton("Cancel", null).show()
+            }.setNegativeButton("Cancel", null).show()
+    }
+
     private fun bg(block: () -> Unit) {
         runOnUiThread { busy++; progress.visibility = View.VISIBLE }
         Thread {
@@ -889,7 +1085,31 @@ class MainActivity : AppCompatActivity() {
         }
         val infoCard = card(filesInfoHeader, filesInfoBody.top(8))
         refreshFilesInfo() // empty state shows "Files Info:  No Files Loaded."
-        return page(libRow, metaRow, undoRow, undoAllRow, infoCard)
+        // 12. Continue with last game — only when nothing is open right now.
+        val lastUri = prefs.getString("last_uri", null); val lastName = prefs.getString("last_name", null)
+        val continueCard = if (st.patcher == null && !lastUri.isNullOrEmpty()) card(
+            title("🕘  Continue with last game?"),
+            subtitle("Pick up where you left off: $lastName"),
+            btn("Continue") {
+                try { loadSource(Uri.parse(lastUri)) } catch (e: Exception) { toast("That file is gone — pick it again") }
+            }) else null
+        // 1. Auto-backup — pristine copy made the moment the file loaded.
+        val backupCard = card(
+            title("💾  Backup"),
+            subtitle(if (backupFile?.exists() == true) "Original saved — one tap brings it back if a patch goes wrong." else "A backup of the original file is saved automatically when you load it."),
+            btn("Restore original") { restoreBackup() })
+        // 3. Patch history — every patch this session, each with its own Undo.
+        historyList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val historyCard = card(
+            title("📜  Patch history"),
+            subtitle("Every patch this session. Undo just one, without touching the rest."),
+            historyList.top(4),
+            btn("Clear history", 2) { history.clear(); refreshHistory() }.top(4))
+        refreshHistory()
+        val startViews = mutableListOf<View>()
+        if (continueCard != null) startViews.add(continueCard)
+        startViews.addAll(listOf(libRow, metaRow, undoRow, undoAllRow, infoCard, backupCard, historyCard))
+        return page(*startViews.toTypedArray())
     }
 
     private fun findPage(): ScrollView {
@@ -913,6 +1133,15 @@ class MainActivity : AppCompatActivity() {
         // #2 SCROLL ROW: ONE horizontal swipeable row, all 20 categories, count inside each chip.
         selectedCats.clear(); chipButtons.clear()
         val chipRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        // 5. Favorites chip — first in the row, shows only starred functions.
+        favChip = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle).apply {
+            id = View.generateViewId(); isAllCaps = false; isCheckable = true; isChecked = showFavsOnly
+            typeface = fontBodyMedium(); styleSegButton(this)
+            text = "⭐ Favorites"
+            setOnClickListener { showFavsOnly = isChecked; paintSingleChip(this, isChecked); sugLimit = 10; renderSuggestions() }
+        }
+        paintSingleChip(favChip, showFavsOnly)
+        chipRow.addView(favChip, LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)))
         cats.forEachIndexed { idx, c ->
             val b = MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle)
             b.id = View.generateViewId(); b.isAllCaps = false; b.isCheckable = true; b.isChecked = true
@@ -922,7 +1151,7 @@ class MainActivity : AppCompatActivity() {
             b.setOnClickListener {
                 if (b.isChecked) selectedCats.add(c) else selectedCats.remove(c)
                 paintChip()
-                sugLimit = 30; renderSuggestions()
+                sugLimit = 10; renderSuggestions()
             }
             selectedCats.add(c)
             paintChip()
@@ -939,8 +1168,11 @@ class MainActivity : AppCompatActivity() {
             "🔎 Type part of a name, e.g. gem, coins, ad, health. Leave empty to see everything.")
         sugList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         emptyText = hint("Run Analyze to see suggestions.").apply { setPadding(dp(4), dp(8), 0, dp(8)) }
-        moreBtn = btn("Show more", 2) { sugLimit += 30; renderSuggestions() }
+        moreBtn = btn("Show more", 2) { sugLimit += 10; renderSuggestions() }
         moreBtn.visibility = View.GONE
+        // 9. Patch every ticked suggestion in one go. 6. Recently patched, one tap to reuse.
+        patchSelectedBtn = btn("Patch selected") { patchSelected() }
+        recentList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val exp = card(
             title("📤  Export"),
             subtitle("Save results as JSON so you can share them, compare two versions of a game, or keep a backup of what you found."),
@@ -951,15 +1183,19 @@ class MainActivity : AppCompatActivity() {
             subtitle("Swipe → to see all 20 categories. Tap a chip to filter — the number is how many were found in it."),
             chipFlow, filterField.asView(),
             emptyText, sugList.top(0), moreBtn.top(4),
+            patchSelectedBtn.top(4),
             btn("Add shown to Batch list", 2) { sendToBatch() }.top(8),
+            label("🕘  RECENTLY PATCHED", cPrimary()),
+            card(title("Recently patched"), subtitle("Tap Use to fill one in again in Patch."),
+                recentList.top(4)),
             label("📤  EXPORT", cPrimary()), exp
         )
         filterField.edit.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { sugLimit = 30; renderSuggestions() }
+            override fun afterTextChanged(s: Editable?) { sugLimit = 10; renderSuggestions() }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
-        renderSuggestions()
+        renderSuggestions(); refreshRecent()
         return pg
     }
 
@@ -1001,13 +1237,32 @@ class MainActivity : AppCompatActivity() {
         lateinit var ap: MaterialButton
         ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         val edit = btn("Edit", 2) { applySuggestion(s) }.apply { maxLines = 1 }
-        return card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), row(ap, edit))
+        // 9. checkbox = pick for "Patch selected". 5. star = Favorite. 10. Copy = RVA + patch.
+        val key = sugKey(s)
+        val check = CheckBox(this).apply {
+            isChecked = key in selectedKeys
+            setOnCheckedChangeListener { _, c -> if (c) selectedKeys.add(key) else selectedKeys.remove(key); refreshPatchSelectedBtn() }
+        }
+        val favs = favKeys()
+        val star = btn(if (key in favs) "★" else "☆", 2) {
+            val f2 = favKeys(); if (key in f2) f2.remove(key) else f2.add(key); saveFavs(f2)
+            renderSuggestions(); toast(if (key in f2) "Added to Favorites" else "Removed from Favorites")
+        }.apply { maxLines = 1 }
+        val copy = btn("Copy", 2) { copyText("patch", "0x%X  %s.%s  %s".format(s.rva, s.cls, s.method, s.patch())) }.apply { maxLines = 1 }
+        val patchedMark = if (key in patchedKeys) hintSuccess("✓ Patched this session") else null // 11. patched marker
+        val extras = row(check, star, copy)
+        return if (patchedMark != null) card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), patchedMark, extras, row(ap, edit))
+        else card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), extras, row(ap, edit))
     }
     private fun refreshCatChipLabels() {
         // Count inside each chip: total suggestions found in that category (0 before Analyze)
         chipButtons.forEachIndexed { idx, b ->
             if (idx < cats.size) b.text = "${cats[idx]} • ${st.suggestions.count { it.category == cats[idx] }}"
         }
+    }
+    private fun refreshPatchSelectedBtn() {
+        if (!::patchSelectedBtn.isInitialized) return
+        patchSelectedBtn.text = if (selectedKeys.isEmpty()) "Patch selected" else "Patch selected (${selectedKeys.size})"
     }
     private fun renderSuggestions() {
         if (!::sugList.isInitialized) return
@@ -1029,6 +1284,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (list.size > sugLimit) { moreBtn.text = "Show more (" + (list.size - sugLimit) + " left)"; moreBtn.visibility = View.VISIBLE }
         else moreBtn.visibility = View.GONE
+        refreshPatchSelectedBtn()
     }
     private fun pickMeta() {
         val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
@@ -1062,7 +1318,7 @@ class MainActivity : AppCompatActivity() {
                 st.dumpReport = "Done.\n" + an.diag.toString()
                 setStatus("Analysis done: ${an.resolvedMethods} methods")
                 log("Analysis done: ${an.resolvedMethods} methods, ${sg.size} suggestions")
-                ui { sumText.text = summaryLine(); dumpSummary.text = st.dumpReport; sugLimit = 30; renderSuggestions(); refreshHint(); refreshFilesInfo() }
+                ui { sumText.text = summaryLine(); dumpSummary.text = st.dumpReport; sugLimit = 10; renderSuggestions(); refreshHint(); refreshFilesInfo() }
             } catch (e: Exception) {
                 val rep = "Analysis failed:\n" + (e.message ?: e.toString()) + "\n\n" + (an?.diag ?: "")
                 st.dumpReport = rep; setStatus("Analysis failed"); log(rep); an?.close()
@@ -1072,9 +1328,13 @@ class MainActivity : AppCompatActivity() {
     }
     private fun filteredSuggestions(cat: String? = null): List<Suggestion> {
         val q = filterField.text.trim().lowercase()
+        // 4. Typing a name searches ALL categories — a name search should never be
+        //    hidden because its category chip is off. 5. Favorites also ignores chips.
+        val ignoreCats = q.isNotEmpty() || showFavsOnly
         return st.suggestions.filter {
             it.kind != "noop" &&
-                (if (cat == null) it.category in selectedCats else it.category == cat) &&
+                (ignoreCats || (if (cat == null) it.category in selectedCats else it.category == cat)) &&
+                (showFavsOnly.not() || sugKey(it) in favKeys()) &&
                 (q.isEmpty() || (it.cls + "." + it.method).lowercase().contains(q))
         }.sortedWith(compareBy({ isUiClass(it) }, { it.category }, { it.cls + "." + it.method }))
     }
@@ -1085,11 +1345,13 @@ class MainActivity : AppCompatActivity() {
         if (off < 0 || off + data.size > p.size()) return toast("Patch runs past the end of the file")
         val auto = autoSwitch.isChecked
         bg {
-            val old = applyOne(p, off, data, auto)
+            val old = applyOne(p, off, data, auto, s.cls + "." + s.method)
+            patchedKeys.add(sugKey(s))
+            recordRecent(s.cls + "." + s.method, "%X".format(s.rva), s.kind, s.value)
             log("0x%X  %s.%s -> %s  (was %s)".format(off, s.cls, s.method, s.patch(), Hex.fmt(old)))
             setStatus("${p.journal.size} change(s) this session")
             ui {
-                done()
+                done(); renderSuggestions(); refreshRecent()
                 val sb = Snackbar.make(findViewById(android.R.id.content), "Patched " + s.method, Snackbar.LENGTH_LONG)
                 sb.setAnchorView(nav); sb.setAction("Undo") { undo(false) }; sb.show()
             }
@@ -1142,7 +1404,8 @@ class MainActivity : AppCompatActivity() {
                 title("🟢  Make the function return a value"),
                 subtitle("Easiest patch. The function stops running its old code and just returns your value. Best for getters: GetGems, IsPremium, GetHealth."),
                 hint("① Pick the type the function returns (check Find — it says “returns int / bool / float”).  ② Type the value.  ③ Tap Patch function."),
-                typeRow, valueField.asView(), btn("Patch function") { doReturnValue() }.top(12)),
+                typeRow, valueField.asView(),
+                row(btn("Preview", 2) { previewValue() }, btn("Patch function") { doReturnValue() }).top(12)),
             card(title("📋  Result"), subtitle("Green = patched. If it says “runs past end”, your address is wrong."), returnResult)
         )
         bytesField = Field("New bytes: hex or assembly", 3, true,
@@ -1154,7 +1417,7 @@ class MainActivity : AppCompatActivity() {
                 title("🟠  Write bytes"),
                 subtitle("For when you know exactly what bytes / assembly you want. Advanced — use Value tab if you're unsure."),
                 bytesField.asView(),
-                row(btn("Presets", 2) { showPresets() }, btn("Apply") { doPatch() }),
+                row(btn("Presets", 2) { showPresets() }, btn("Preview", 2) { previewBytes() }, btn("Apply") { doPatch() }),
                 hint("Bytes are written exactly as typed. Use Value tab if you are unsure.").top(6)),
             card(title("👀  Read bytes"), subtitle("See what's really at the address before you change it."), lenField.asView(), btn("Read at address", 1) { doRead() }.top(8)),
             card(title("📋  Result"), patchResult)
@@ -1171,7 +1434,9 @@ class MainActivity : AppCompatActivity() {
                 batchField.asView(), dryCheck,
                 hintWarn("⚠️ ALWAYS run with Dry run ON first. If it says 0 errors, turn Dry run OFF and run again to really patch.").top(4),
                 btn("Run list") { runBatch() }.top(8),
-                row(btn("Load", 2) { pickText(REQ_LOAD_PATCHES) }, btn("Save", 2) { saveText() })),
+                row(btn("Load", 2) { pickText(REQ_LOAD_PATCHES) }, btn("Save", 2) { saveText() }),
+                // 7. Profiles — save this whole list under a name, load it back later.
+                row(btn("Save profile", 2) { saveProfile() }, btn("Load profile", 2) { loadProfile() }).top(4)),
             card(title("📋  Result"), batchResult)
         )
         patternField = Field("Bytes with ?? wildcards", 1, true,
@@ -1185,7 +1450,13 @@ class MainActivity : AppCompatActivity() {
                 hint("Tap a match to use it as your target address.").top(6)),
             card(title("🎯  Matches"), searchResult)
         )
-        sections = listOf(value, bytes, list, search)
+        // 8. Compare — last patch, old vs new, side by side.
+        val compare = section(
+            card(title("🔍  Compare last patch"),
+                subtitle("See exactly what the last patch changed — old bytes vs new bytes."),
+                btn("Compare last patch", 2) { compareLastPatch() }.top(4))
+        )
+        sections = listOf(value, bytes, list, search, compare)
         // Segment chips: separate gradient/outline chips, same as Find categories (no toggle group)
         val segRowView = singleChipRow(listOf("Value", "Bytes", "List", "Search"), segButtons, curSeg, { selectSeg(it) }, 4)
         targetCard.layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(12); bottomMargin = dp(12) }
@@ -1231,16 +1502,13 @@ class MainActivity : AppCompatActivity() {
             label("🎯  DEFAULTS", cPrimary()),
             card(title("Patch defaults"), subtitle("These are used when Find / Patch open."),
                 rva, dry),
-            // Undo Changes — its own section under Defaults. ONLY the Write-each-change
-            // switch moved here; Undo last change + Undo all stay on Start.
-            label("↩  UNDO CHANGES", cPrimary()),
-            card(title("Undo Changes"),
-                subtitle("How patches are written. Undo buttons stay on Start."),
-                autoSwitch,
-                hint("Write each change straight into the original file — ON = every patch lands immediately, OFF = patches wait in memory until you save.").top(4)),
             label("✨  EFFECTS", cPrimary()),
-            card(title("Falling gems"), subtitle("Diamonds, coins and gems drift behind the cards on every tab, top to bottom. Never over text or buttons."),
-                sw("Falling gems on all tabs", prefs.getBoolean("gems", true)).apply {
+            // Diamonds, Coins and Gems — ONE row: label left, toggle right, nothing stacked.
+            // Switch has no text of its own (the label IS the text), so the whole row fits.
+            card(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                addView(title("Diamonds, Coins and Gems"), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+                addView(sw("", prefs.getBoolean("gems", true)).apply {
                     setOnCheckedChangeListener { _, c ->
                         prefs.edit().putBoolean("gems", c).apply(); gemsEnabled = c
                         if (::gemsView.isInitialized) {
@@ -1248,7 +1516,13 @@ class MainActivity : AppCompatActivity() {
                             else { gemsView.stop(); gemsView.visibility = View.GONE }
                         }
                     }
-                }),
+                }, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            }),
+            // Undo Changes — NOT under Defaults anymore. Stands alone as its own section.
+            label("↩  UNDO CHANGES", cPrimary()),
+            card(title("Undo Changes"),
+                autoSwitch,
+                hint("Write each change straight into the original file — ON = every patch lands immediately, OFF = patches wait in memory until you save.").top(4)),
             label("🧹  STORAGE", cPrimary()),
             card(title("Clear cache"), subtitle("Clears metadata + APK copies"),
                 btn("Clear cache", 1) { clearCache() }),
@@ -1386,6 +1660,7 @@ class MainActivity : AppCompatActivity() {
             st.dump?.close(); st.dump = null; st.suggestions = emptyList(); st.dumpReport = ""
             ui { dumpSummary.text = ""; sumText.text = summaryLine(); renderSuggestions(); refreshHint() }
             val name = queryName(uri); st.srcUri = uri; st.srcName = name; st.patcher = null
+            prefs.edit().putString("last_uri", uri.toString()).putString("last_name", name).apply() // 12. remember last game
             if (name.lowercase().endsWith(".apk")) {
                 val f = File(cacheDir, "input.apk")
                 contentResolver.openInputStream(uri)!!.use { i -> FileOutputStream(f).use { o -> copyStream(i, o, "Copying APK") } }
@@ -1415,6 +1690,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun finishLoad(label: String) {
+        backupOriginal() // 1. pristine backup BEFORE any patch can touch the file
         val p = Patcher(work); st.patcher = p
         val e = ElfInfo.parse(work); st.elf = e
         val desc = if (e == null) "Not an ELF file (raw hex editing only)" else "ELF ${e.archName()}, ${e.segments.size} loadable segments"
@@ -1435,9 +1711,11 @@ class MainActivity : AppCompatActivity() {
             val ch = os.channel; ch.position(off); ch.write(ByteBuffer.wrap(data)); ch.force(true)
         }
     }
-    private fun applyOne(p: Patcher, off: Long, data: ByteArray, auto: Boolean): ByteArray {
+    private fun applyOne(p: Patcher, off: Long, data: ByteArray, auto: Boolean, label: String = "Patch"): ByteArray {
         val old = p.read(off, data.size); p.write(off, data); p.journal.add(Patcher.Rec(off, old, data))
-        if (auto) writeThrough(off, data); return old
+        if (auto) writeThrough(off, data)
+        recordHistory(HistEntry(off, old, data, label)) // 3. history + 8. last patch for Compare
+        return old
     }
     private fun selectedType(): String = types[curType.coerceIn(types.indices)]
     private fun showPresets() {
@@ -1460,7 +1738,8 @@ class MainActivity : AppCompatActivity() {
         if (off < 0 || off + data.size > p.size()) return toast("Patch runs past the end of the file")
         val auto = autoSwitch.isChecked
         bg {
-            val old = applyOne(p, off, data, auto)
+            val old = applyOne(p, off, data, auto, "Bytes @ 0x%X".format(off))
+            recordRecent("Bytes @ 0x%X".format(off), "%X".format(v), "bytes", bytesField.text)
             show(patchResult, "Patched file offset 0x%X\nold: %s\nnew: %s".format(off, Hex.fmt(old), Hex.fmt(data)))
             log("0x%X  %s -> %s".format(off, Hex.fmt(old), Hex.fmt(data))); setStatus("${p.journal.size} change(s) this session")
         }
@@ -1474,7 +1753,8 @@ class MainActivity : AppCompatActivity() {
         if (off < 0 || off + data.size > p.size()) return toast("Patch runs past the end of the file")
         val auto = autoSwitch.isChecked
         bg {
-            val old = applyOne(p, off, data, auto)
+            val old = applyOne(p, off, data, auto, "Return $type $valueTxt")
+            recordRecent("Return $type $valueTxt", "%X".format(v), type, valueTxt)
             val msg = "Function now returns " + type + " " + valueTxt + "\n" + data.size + " bytes written at file offset 0x%X\nold: %s\nnew: %s"
             show(returnResult, msg.format(off, Hex.fmt(old), Hex.fmt(data)))
             log("0x%X  return %s %s".format(off, type, valueTxt)); setStatus("${p.journal.size} change(s) this session")
@@ -1512,7 +1792,7 @@ class MainActivity : AppCompatActivity() {
             }
             if (failed > 0) out.add("Nothing applied: $failed error(s).")
             else if (dry) out.add("Dry run OK: ${planned.size} patch(es) would be applied.")
-            else { for ((op, off) in planned) applyOne(p, off, op.new, auto); out.add("Applied ${planned.size} patch(es)."); setStatus("${p.journal.size} change(s) this session") }
+            else { for ((op, off) in planned) applyOne(p, off, op.new, auto, "Batch line ${op.line}"); out.add("Applied ${planned.size} patch(es)."); setStatus("${p.journal.size} change(s) this session") }
             show(batchResult, out.joinToString("\n")); log("Batch: ${out.last()}"); if (!dry) showPatchedWithUndo(planned.size)
         }
     }
@@ -1548,6 +1828,8 @@ class MainActivity : AppCompatActivity() {
             if (n == 0) { toast("Nothing to undo"); return@bg }
             val total = n
             while (n > 0) { val r = p.journal.removeAt(p.journal.size - 1); p.write(r.off, r.old); writeThrough(r.off, r.old); n-- }
+            if (all) history.clear() else if (history.isNotEmpty()) history.removeAt(history.size - 1)
+            ui { refreshHistory() }
             log("Undid $total change(s)"); setStatus("${p.journal.size} change(s) this session")
         }
     }
