@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Canvas
@@ -121,6 +123,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var emptyText: TextView
     private lateinit var moreBtn: MaterialButton
     private var sugLimit = 10 // 10 shown first, +10 per "Show more" tap
+    // Search debounce: typing "gems" fired 4 full rebuilds (sort + recount + rebuild
+    // every card). Now it waits 150ms after the last keystroke and rebuilds once.
+    private val filterDebounce = Runnable { sugLimit = 10; renderSuggestions() }
     // ---------- ALL-12 FEATURES state (all in-memory / prefs / app-private files — no AppState change) ----------
     private class HistEntry(val off: Long, val old: ByteArray, val new: ByteArray, val label: String, val time: Long = System.currentTimeMillis())
     private val history = ArrayList<HistEntry>() // 3. patch history, this session
@@ -132,6 +137,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var historyList: LinearLayout // Start: patch history rows
     private lateinit var recentList: LinearLayout // Find: recently patched rows
     private lateinit var patchSelectedBtn: MaterialButton // Find: "Patch selected (n)"
+    private var analyzing = false // guards double-tap Analyze (bg() spawns a raw Thread per call)
     private lateinit var favChip: MaterialButton // Find: Favorites chip
 
     private val presets = listOf(
@@ -311,6 +317,36 @@ class MainActivity : AppCompatActivity() {
             }.start(); f()
         }
         return b
+    }
+    // ---------- COMPACT suggestion-card buttons — ONE row, NOTHING clipped ----------
+    // The normal btn() is 56dp tall with big padding, and row() splits the width
+    // EQUALLY — that is why "Apply fix" got squeezed and the card needed 2 rows.
+    // These compact buttons size to their OWN text (wrap content), use 12sp text
+    // and 8dp side padding, and sit in a wrap-content row with 4dp gaps — so all 5
+    // controls fit on one row on a 360dp-wide phone with every label fully visible.
+    private fun compactBtn(text: String, kind: Int = 2, f: () -> Unit): MaterialButton {
+        val b = if (kind == 0) MaterialButton(this) // filled = Apply fix (lavender)
+        else MaterialButton(this, null, MR.attr.materialButtonOutlinedStyle) // outline = star / Copy / Edit
+        b.text = text; b.isAllCaps = false
+        b.typeface = fontBodyMedium(); b.textSize = 12f
+        b.cornerRadius = dp(12); b.minimumHeight = dp(36); b.minimumWidth = 0
+        b.setPadding(dp(8), 0, dp(8), 0)
+        b.maxLines = 1 // NO ellipsize — the button is as wide as its text, so nothing is ever cut
+        b.setOnClickListener { v ->
+            v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(70).withEndAction {
+                v.animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+            }.start(); f()
+        }
+        return b
+    }
+    // Wrap-content row: each child keeps its own width, 4dp gap between them.
+    // (row() gives every child an EQUAL share — wrong here, it would shrink "Apply fix".)
+    private fun compactRow(vararg views: View): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(8), 0, 0)
+        views.forEachIndexed { i, v ->
+            addView(v, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { if (i > 0) marginStart = dp(4) })
+        }
     }
     private fun row(vararg views: View): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0)
@@ -649,7 +685,11 @@ class MainActivity : AppCompatActivity() {
         try {
             val name = (st.srcName.ifEmpty { "libil2cpp.so" }).replace(Regex("[^A-Za-z0-9._-]"), "_")
             val b = File(filesDir, "backup_$name.bak")
-            if (!b.exists()) { FileInputStream(work).use { i -> FileOutputStream(b).use { o -> copyStream(i, o, "Backing up original") } } }
+            // ALWAYS overwrite: the backup must be THIS file's pristine copy.
+            // Old code skipped the copy if a backup file already existed — so loading
+            // Game B's libil2cpp.so after Game A kept Game A's backup, and Restore
+            // would have put Game A's bytes into Game B's file.
+            FileInputStream(work).use { i -> FileOutputStream(b).use { o -> copyStream(i, o, "Backing up original") } }
             backupFile = b
         } catch (e: Exception) { log("Backup failed: $e") }
     }
@@ -765,6 +805,21 @@ class MainActivity : AppCompatActivity() {
         if (off < 0 || off + data.size > p.size()) return toast("Patch runs past the end of the file")
         val old = p.read(off, data.size)
         show(returnResult, "Preview — NOT written yet\nFunction would return $type $valueTxt\nold: %s\nnew: %s".format(Hex.fmt(old), Hex.fmt(data)))
+    }
+    // NEW: Verify last patch — re-read the bytes from the file and confirm they still
+    // match what was written. Catches "patched, then file reloaded / overwritten" confusion.
+    private fun verifyLastPatch() {
+        val e = lastPatch ?: return toast("No patch yet this session")
+        val p = st.patcher ?: return toast("Open a file first")
+        bg {
+            val now = p.read(e.off, e.new.size)
+            val ok = now.contentEquals(e.new)
+            ui {
+                MaterialAlertDialogBuilder(this).setTitle(if (ok) "✓ Verified — patch is in the file" else "✗ NOT in the file")
+                    .setMessage("Address: 0x%X\n\nExpected:\n%s\n\nActually in file now:\n%s\n\n%s".format(e.off, Hex.fmt(e.new), Hex.fmt(now), if (ok) "The patch landed and is still there." else "Something changed the file after patching — re-apply it, or the file was reloaded."))
+                    .setPositiveButton("OK", null).show()
+            }
+        }
     }
     // 8. Compare — last patch, old vs new, side by side in a dialog.
     private fun compareLastPatch() {
@@ -1191,7 +1246,10 @@ class MainActivity : AppCompatActivity() {
             label("📤  EXPORT", cPrimary()), exp
         )
         filterField.edit.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { sugLimit = 10; renderSuggestions() }
+            override fun afterTextChanged(s: Editable?) {
+                filterField.edit.removeCallbacks(filterDebounce)
+                filterField.edit.postDelayed(filterDebounce, 150)
+            }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
@@ -1215,7 +1273,7 @@ class MainActivity : AppCompatActivity() {
         "bool" -> "Always returns " + s.value
         else -> "Always returns " + s.value + " (" + s.kind + ")"
     }
-    private fun suggestionCard(s: Suggestion): View {
+    private fun suggestionCard(s: Suggestion, favs: Set<String> = favKeys()): View {
         val col = catColor(s.category)
         val pill = tv("${catEmoji(s.category)}  ${s.category.uppercase()}" + if (isUiClass(s)) " • UI" else "", MR.style.TextAppearance_Material3_LabelSmall).apply {
             typeface = fontTitle(); letterSpacing = 0.08f; setTextColor(col.toInt())
@@ -1234,30 +1292,34 @@ class MainActivity : AppCompatActivity() {
         val effect = tv(effectText(s), MR.style.TextAppearance_Material3_BodyMedium).apply {
             typeface = fontBodyMedium(); setTextColor((if (s.kind == "noop") cWarning() else cSuccess()).toInt())
         }
-        lateinit var ap: MaterialButton
-        ap = btn("Apply fix") { quickApply(s) { ap.text = "Applied ✓" } }.apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-        val edit = btn("Edit", 2) { applySuggestion(s) }.apply { maxLines = 1 }
-        // 9. checkbox = pick for "Patch selected". 5. star = Favorite. 10. Copy = RVA + patch.
+        // ONE row: [☐] [★] [Copy] [Apply fix] [Edit] — compact buttons, own widths, nothing clipped.
         val key = sugKey(s)
         val check = CheckBox(this).apply {
             isChecked = key in selectedKeys
+            minimumWidth = 0; setPadding(dp(2), 0, dp(2), 0) // strip the default CheckBox padding — it wasted ~16dp
             setOnCheckedChangeListener { _, c -> if (c) selectedKeys.add(key) else selectedKeys.remove(key); refreshPatchSelectedBtn() }
         }
-        val favs = favKeys()
-        val star = btn(if (key in favs) "★" else "☆", 2) {
+        val star = compactBtn(if (key in favs) "★" else "☆") {
             val f2 = favKeys(); if (key in f2) f2.remove(key) else f2.add(key); saveFavs(f2)
             renderSuggestions(); toast(if (key in f2) "Added to Favorites" else "Removed from Favorites")
-        }.apply { maxLines = 1 }
-        val copy = btn("Copy", 2) { copyText("patch", "0x%X  %s.%s  %s".format(s.rva, s.cls, s.method, s.patch())) }.apply { maxLines = 1 }
+        }
+        val copy = compactBtn("Copy") { copyText("patch", "0x%X  %s.%s  %s".format(s.rva, s.cls, s.method, s.patch())) }
+        lateinit var ap: MaterialButton
+        ap = compactBtn("Apply fix", 0) { quickApply(s) { ap.text = "Applied ✓" } }
+        val edit = compactBtn("Edit") { applySuggestion(s) }
+        val actions = compactRow(check, star, copy, ap, edit)
         val patchedMark = if (key in patchedKeys) hintSuccess("✓ Patched this session") else null // 11. patched marker
-        val extras = row(check, star, copy)
-        return if (patchedMark != null) card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), patchedMark, extras, row(ap, edit))
-        else card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), extras, row(ap, edit))
+        return if (patchedMark != null) card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), patchedMark, actions)
+        else card(top, name, effect, hint("returns " + s.ret + "   " + s.note).top(2), actions)
     }
     private fun refreshCatChipLabels() {
         // Count inside each chip: total suggestions found in that category (0 before Analyze)
+        // ONE pass over the list — old code ran st.suggestions.count{} once per category
+        // (20 full scans) on every single render, including every keystroke in Search.
+        val counts = HashMap<String, Int>()
+        for (s in st.suggestions) counts[s.category] = (counts[s.category] ?: 0) + 1
         chipButtons.forEachIndexed { idx, b ->
-            if (idx < cats.size) b.text = "${cats[idx]} • ${st.suggestions.count { it.category == cats[idx] }}"
+            if (idx < cats.size) b.text = "${cats[idx]} • ${counts[cats[idx]] ?: 0}"
         }
     }
     private fun refreshPatchSelectedBtn() {
@@ -1268,7 +1330,8 @@ class MainActivity : AppCompatActivity() {
         if (!::sugList.isInitialized) return
         refreshCatChipLabels()
         sugList.removeAllViews()
-        val list = filteredSuggestions()
+        val favs = favKeys() // parsed ONCE per render, shared by filter + all cards
+        val list = filteredSuggestions(favs = favs)
         if (list.isEmpty()) {
             emptyText.text = when {
                 st.dump == null -> "Run Analyze to see suggestions."
@@ -1280,7 +1343,7 @@ class MainActivity : AppCompatActivity() {
         }
         emptyText.visibility = View.GONE
         list.take(sugLimit).forEachIndexed { i, s ->
-            val c = suggestionCard(s); sugList.addView(c); if (i < 10) c.enter(i * 30L)
+            val c = suggestionCard(s, favs); sugList.addView(c); if (i < 10) c.enter(i * 30L)
         }
         if (list.size > sugLimit) { moreBtn.text = "Show more (" + (list.size - sugLimit) + " left)"; moreBtn.visibility = View.VISIBLE }
         else moreBtn.visibility = View.GONE
@@ -1300,8 +1363,20 @@ class MainActivity : AppCompatActivity() {
     }
     private fun doAnalyze() {
         if (st.patcher == null) { toast("Open libil2cpp.so or the APK first"); go(0); return }
+        if (analyzing) { toast("Already analyzing — wait for it to finish"); return } // double-tap guard
+        analyzing = true
+        // Android 13+: ask once so the Analyze progress notification can actually show.
+        // If the user says no, Analyze still runs — the notification just stays hidden.
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 99)
+        }
+        // Foreground service: WITHOUT this, Android kills the app when the user locks
+        // the screen mid-Analyze (10-60s) and the job dies halfway. PatchService
+        // existed with 0 callers — now it actually runs for Analyze + Build APK.
+        PatchService.start(this, PatchService.JOB_ANALYZE, "Analyzing game...")
         val includeAll = includeAllSwitch.isChecked
         bg {
+            try {
             st.dump?.close(); st.dump = null; st.suggestions = emptyList(); ui { renderSuggestions() }
             var mf = st.metaFile; val apk = st.apkFile
             if (mf == null && apk != null) {
@@ -1323,10 +1398,11 @@ class MainActivity : AppCompatActivity() {
                 val rep = "Analysis failed:\n" + (e.message ?: e.toString()) + "\n\n" + (an?.diag ?: "")
                 st.dumpReport = rep; setStatus("Analysis failed"); log(rep); an?.close()
                 ui { sumText.text = "Analysis failed. Details below."; dumpSummary.text = rep; dumpSummary.visibility = View.VISIBLE }
+            } finally { analyzing = false; PatchService.stop(this) }
             }
         }
     }
-    private fun filteredSuggestions(cat: String? = null): List<Suggestion> {
+    private fun filteredSuggestions(cat: String? = null, favs: Set<String> = favKeys()): List<Suggestion> {
         val q = filterField.text.trim().lowercase()
         // 4. Typing a name searches ALL categories — a name search should never be
         //    hidden because its category chip is off. 5. Favorites also ignores chips.
@@ -1334,7 +1410,7 @@ class MainActivity : AppCompatActivity() {
         return st.suggestions.filter {
             it.kind != "noop" &&
                 (ignoreCats || (if (cat == null) it.category in selectedCats else it.category == cat)) &&
-                (showFavsOnly.not() || sugKey(it) in favKeys()) &&
+                (showFavsOnly.not() || sugKey(it) in favs) &&
                 (q.isEmpty() || (it.cls + "." + it.method).lowercase().contains(q))
         }.sortedWith(compareBy({ isUiClass(it) }, { it.category }, { it.cls + "." + it.method }))
     }
@@ -1454,7 +1530,7 @@ class MainActivity : AppCompatActivity() {
         val compare = section(
             card(title("🔍  Compare last patch"),
                 subtitle("See exactly what the last patch changed — old bytes vs new bytes."),
-                btn("Compare last patch", 2) { compareLastPatch() }.top(4))
+                row(btn("Compare last patch", 2) { compareLastPatch() }, btn("Verify last patch", 2) { verifyLastPatch() }).top(4))
         )
         sections = listOf(value, bytes, list, search, compare)
         // Segment chips: separate gradient/outline chips, same as Find categories (no toggle group)
@@ -1541,6 +1617,8 @@ class MainActivity : AppCompatActivity() {
             setStatus("Cache cleared."); toast("Cache cleared")
         }
     }
+    override fun onPause() { if (::gemsView.isInitialized) gemsView.stop(); super.onPause() } // gems: stop when backgrounded — was animating (and burning battery) behind other apps
+    override fun onResume() { super.onResume(); if (gemsEnabled && ::gemsView.isInitialized) { gemsView.visibility = View.VISIBLE; gemsView.start() } }
     override fun onDestroy() { if (::gemsView.isInitialized) gemsView.stop(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
@@ -1597,27 +1675,28 @@ class MainActivity : AppCompatActivity() {
                 loadSource(uri)
             }
             REQ_SAVE_COPY -> bg {
-                contentResolver.openOutputStream(uri, "wt")!!.use { o -> FileInputStream(work).use { i -> copyStream(i, o, "Saving") } }
+                (contentResolver.openOutputStream(uri, "wt") ?: return@bg toast("Could not open that location")).use { o -> FileInputStream(work).use { i -> copyStream(i, o, "Saving") } }
                 setStatus("Copy saved."); toast("Copy saved")
             }
             REQ_BUILD_APK -> {
                 val inApk = st.apkFile; val entry = st.apkEntry; if (inApk == null || entry == null) return
+                PatchService.start(this, PatchService.JOB_BUILD_APK, "Building patched APK...")
                 bg {
                     val signed = File(cacheDir, "signed.apk")
                     ApkTools.buildSignedApk(this, inApk, entry, work, signed) { setStatus(it) }
-                    contentResolver.openOutputStream(uri, "wt")!!.use { o -> FileInputStream(signed).use { i -> copyStream(i, o, "Writing APK") } }
-                    signed.delete(); setStatus("Patched APK saved."); log("Patched APK written. Uninstall the original app, then install this one."); toast("Patched APK saved. Uninstall the original first.")
+                    (contentResolver.openOutputStream(uri, "wt") ?: return@bg toast("Could not open that location")).use { o -> FileInputStream(signed).use { i -> copyStream(i, o, "Writing APK") } }
+                    signed.delete(); PatchService.stop(this); setStatus("Patched APK saved."); log("Patched APK written. Uninstall the original app, then install this one."); toast("Patched APK saved. Uninstall the original first.")
                 }
             }
             REQ_LOAD_PATCHES -> bg {
-                val t = contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+                val t = (contentResolver.openInputStream(uri) ?: return@bg toast("Could not open that file")).bufferedReader().use { it.readText() }
                 ui { batchField.text = t }; log("Loaded patch list (${t.lines().size} lines)")
             }
-            REQ_SAVE_PATCHES -> { val t = batchField.text; bg { contentResolver.openOutputStream(uri, "wt")!!.use { it.write(t.toByteArray()) }; toast("Patch list saved") } }
+            REQ_SAVE_PATCHES -> { val t = batchField.text; bg { (contentResolver.openOutputStream(uri, "wt") ?: return@bg toast("Could not open that location")).use { it.write(t.toByteArray()) }; toast("Patch list saved") } }
             REQ_PICK_META -> bg {
                 val name = queryName(uri); st.dump?.close(); st.dump = null
                 val old = st.metaFile; val f = File(filesDir, "meta_" + System.currentTimeMillis() + ".dat")
-                contentResolver.openInputStream(uri)!!.use { i -> FileOutputStream(f).use { o -> copyStream(i, o, "Loading metadata") } }
+                (contentResolver.openInputStream(uri) ?: return@bg toast("Could not open that file")).use { i -> FileOutputStream(f).use { o -> copyStream(i, o, "Loading metadata") } }
                 if (old != null && old != f) old.delete()
                 st.metaFile = f; st.metaName = name
                 ui { metaText.text = "Metadata: $name (${f.length()} bytes)"; refreshFilesInfo() }; setStatus("Metadata loaded: $name"); log("Metadata loaded: $name")
@@ -1626,7 +1705,8 @@ class MainActivity : AppCompatActivity() {
                 val an = st.dump ?: return; val sg = st.suggestions
                 bg {
                     setStatus("Writing JSON...")
-                    BufferedWriter(OutputStreamWriter(contentResolver.openOutputStream(uri, "wt")!!, Charsets.UTF_8), 1 shl 16).use { an.writeSuggestionsJson(it, sg) }
+                    val os1 = contentResolver.openOutputStream(uri, "wt") ?: return@bg toast("Could not open that location")
+                    BufferedWriter(OutputStreamWriter(os1, Charsets.UTF_8), 1 shl 16).use { an.writeSuggestionsJson(it, sg) }
                     setStatus("Suggestions saved."); toast("Suggestions JSON saved")
                 }
             }
@@ -1634,7 +1714,8 @@ class MainActivity : AppCompatActivity() {
                 val an = st.dump ?: return; val sg = st.suggestions
                 bg {
                     setStatus("Writing JSON...")
-                    BufferedWriter(OutputStreamWriter(contentResolver.openOutputStream(uri, "wt")!!, Charsets.UTF_8), 1 shl 16).use { an.writeJson(it, sg) }
+                    val os2 = contentResolver.openOutputStream(uri, "wt") ?: return@bg toast("Could not open that location")
+                    BufferedWriter(OutputStreamWriter(os2, Charsets.UTF_8), 1 shl 16).use { an.writeJson(it, sg) }
                     setStatus("JSON saved."); toast("JSON saved.")
                 }
             }
@@ -1663,12 +1744,12 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putString("last_uri", uri.toString()).putString("last_name", name).apply() // 12. remember last game
             if (name.lowercase().endsWith(".apk")) {
                 val f = File(cacheDir, "input.apk")
-                contentResolver.openInputStream(uri)!!.use { i -> FileOutputStream(f).use { o -> copyStream(i, o, "Copying APK") } }
+                (contentResolver.openInputStream(uri) ?: return@bg toast("Could not open that file")).use { i -> FileOutputStream(f).use { o -> copyStream(i, o, "Copying APK") } }
                 st.apkFile = f; st.apkEntry = null
                 val names = ApkTools.listCandidates(f); ui { showEntryDialog(names) }
             } else {
                 st.apkFile = null; st.apkEntry = null
-                contentResolver.openInputStream(uri)!!.use { i -> FileOutputStream(work).use { o -> copyStream(i, o, "Loading") } }
+                (contentResolver.openInputStream(uri) ?: return@bg toast("Could not open that file")).use { i -> FileOutputStream(work).use { o -> copyStream(i, o, "Loading") } }
                 finishLoad(name)
             }
         }
@@ -1838,7 +1919,7 @@ class MainActivity : AppCompatActivity() {
         if (st.patcher == null || uri == null) return toast("Open a file first")
         if (st.apkFile != null) return toast("APK mode: use 'Build patched APK'")
         bg {
-            contentResolver.openOutputStream(uri, "wt")!!.use { o -> FileInputStream(work).use { i -> copyStream(i, o, "Saving") } }
+            (contentResolver.openOutputStream(uri, "wt") ?: return@bg toast("Could not open that location")).use { o -> FileInputStream(work).use { i -> copyStream(i, o, "Saving") } }
             setStatus("Saved to original."); toast("Saved to original file")
         }
     }
