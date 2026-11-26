@@ -28,6 +28,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- Android 13+ : without this, PatchService's progress notification is hidden
+         (the service still runs). Requested at runtime before Analyze / Build APK. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- No internet — app is fully offline by design -->
     <!-- Intentionally NO INTERNET permission -->
 
