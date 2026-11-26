@@ -61,7 +61,7 @@ class Il2PatchApp : Application() {
         // 3. Clean old temp files from last session
         cleanupTempFiles()
 
-        Log.i(TAG, "Il2Patch started — theme=${prefs.getString(KEY_THEME, "system")}, rva=${prefs.getBoolean(KEY_RVA, true)}")
+        Log.i(TAG, "Il2Patch started — night mode=${instance.getSharedPreferences("ui", Context.MODE_PRIVATE).getInt("night", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)}")
     }
 
     // ------------------------------------------------------------
@@ -69,18 +69,18 @@ class Il2PatchApp : Application() {
     // ------------------------------------------------------------
 
     private fun applySavedTheme() {
-        val theme = prefs.getString(KEY_THEME, "system") ?: "system"
-        val mode = when (theme.lowercase()) {
-            "light" -> AppCompatDelegate.MODE_NIGHT_NO
-            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
-            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-        }
+        // ONE theme source: MainActivity reads prefs "ui" / int "night", and so do we.
+        // Old code read "il2patch_settings" / string "theme" here — a SECOND source that
+        // MainActivity then overwrote a moment later, so the app could flash the wrong
+        // theme for one frame on launch. Now both read the same value.
+        val mode = instance.getSharedPreferences("ui", Context.MODE_PRIVATE)
+            .getInt("night", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         AppCompatDelegate.setDefaultNightMode(mode)
     }
 
-    /** Called from Settings tab when user changes theme. */
-    fun setTheme(theme: String) {
-        prefs.edit().putString(KEY_THEME, theme).apply()
+    /** Called from Settings tab when user changes theme. Same "ui"/"night" source. */
+    fun setTheme(mode: Int) {
+        instance.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putInt("night", mode).apply()
         applySavedTheme()
     }
 
