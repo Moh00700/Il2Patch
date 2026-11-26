@@ -1398,8 +1398,8 @@ class MainActivity : AppCompatActivity() {
                 val rep = "Analysis failed:\n" + (e.message ?: e.toString()) + "\n\n" + (an?.diag ?: "")
                 st.dumpReport = rep; setStatus("Analysis failed"); log(rep); an?.close()
                 ui { sumText.text = "Analysis failed. Details below."; dumpSummary.text = rep; dumpSummary.visibility = View.VISIBLE }
-            } finally { analyzing = false; PatchService.stop(this) }
             }
+            } finally { analyzing = false; PatchService.stop(this) }
         }
     }
     private fun filteredSuggestions(cat: String? = null, favs: Set<String> = favKeys()): List<Suggestion> {
