@@ -78,8 +78,10 @@ class Il2PatchApp : Application() {
         AppCompatDelegate.setDefaultNightMode(mode)
     }
 
-    /** Called from Settings tab when user changes theme. Same "ui"/"night" source. */
-    fun setTheme(mode: Int) {
+    /** Called from Settings tab when user changes theme. Same "ui"/"night" source.
+        Named setAppTheme (NOT setTheme): Application already has setTheme(Int) —
+        using that name hides the supertype member and the compiler rejects it. */
+    fun setAppTheme(mode: Int) {
         instance.getSharedPreferences("ui", Context.MODE_PRIVATE).edit().putInt("night", mode).apply()
         applySavedTheme()
     }
